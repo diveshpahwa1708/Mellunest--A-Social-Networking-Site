@@ -1,0 +1,2 @@
+# Optional cleanup secret; replace with your own random value.
+CLEANUP_SECRET="replace-with-your-own-random-secret"
