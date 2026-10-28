@@ -19,6 +19,8 @@ export default function App() {
     const messageRevision = useRef(0);
     const sendLock = useRef(false);
     const [changingPassword, setChangingPassword] = useState(false);
+    const [passwordOpen, setPasswordOpen] = useState(false);
+    const [passwordError, setPasswordError] = useState('');
     const passwordLock = useRef(false);
     const me = auth?.user;
     const navigationKey = page === 'profile'
@@ -242,8 +244,10 @@ export default function App() {
         history.replaceState({}, '', '/?post=' + n.target);
         setPage('post');
     } }}><Avatar user={n}/><span><strong>{n.name}</strong> {n.kind === 'like' ? 'liked your moment.' : n.kind === 'comment' ? 'left a comment on your moment.' : n.kind === 'follow' ? 'is now following you.' : 'sent you a message.'}<small>{ago(n.created)}</small></span>{!n.read && <i className="status-dot"/>}</button>) : <Empty title="Good things will find you." detail="Likes, comments, new followers and messages will appear here."/>}</section>}
- {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Change password</strong><small>Use at least 8 characters, including a letter and a number. Special characters are optional.</small></span></div>
-<form onSubmit={async e => {
+ {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => { const confirmName = prompt('Permanently delete your account, all posts and conversations? Type your username to confirm.'); if (confirmName)
+        act(async () => { await api('users', 'DELETE', { confirm: confirmName }); location.replace('/?auth=login'); }); }}><Trash2 size={16}/>Delete account</Button></div></section>}
+ </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home'], [Compass, 'explore'], [Plus, 'create'], [MessageCircle, 'messages'], [Users, 'profile']].map(([Icon, v]: any) => <button key={v} className={page === v ? 'selected' : ''} aria-label={v} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : navigate(v)}><Icon size={22}/></button>)}</nav></div>
+ {passwordOpen && <Modal title="Reset password" close={() => { if (!passwordLock.current) { setPasswordOpen(false); setPasswordError(''); } }}><form style={{ padding: 24 }} onSubmit={async e => {
     e.preventDefault();
     if (passwordLock.current) return;
     const form = e.currentTarget;
@@ -251,29 +255,30 @@ export default function App() {
     const oldPassword = String(fields.get('oldPassword') || '');
     const newPassword = String(fields.get('newPassword') || '');
     const confirmPassword = String(fields.get('confirmPassword') || '');
-    if (newPassword !== confirmPassword) { setError('New passwords do not match.'); return; }
+    if (newPassword !== confirmPassword) { setPasswordError('New passwords do not match.'); return; }
     if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword) || new TextEncoder().encode(newPassword).length > 72) {
-        setError('Use at least 8 characters including a letter and a number. Maximum 72 bytes.'); return;
+        setPasswordError('Use at least 8 characters including a letter and a number. Maximum 72 bytes.'); return;
     }
     passwordLock.current = true;
     setChangingPassword(true);
-    setError('');
+    setPasswordError('');
     try {
         const result = await api('auth/change-password', 'POST', { oldPassword, newPassword, confirmPassword });
         form.reset();
+        setPasswordOpen(false);
         tell(result.message);
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setPasswordError(e.message); }
     finally { passwordLock.current = false; setChangingPassword(false); }
 }}>
+<p className="muted">Use at least 8 characters, including a letter and a number. Special characters are optional.</p>
+{passwordError && <p className="alert error" role="alert">{passwordError}</p>}
 <fieldset disabled={changingPassword} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14 }}>
-<label style={{ display: 'grid', gap: 6 }}>Old password<input name="oldPassword" type="password" autoComplete="current-password" required /></label>
+<label style={{ display: 'grid', gap: 6 }}>Old password<input name="oldPassword" type="password" autoComplete="current-password" autoFocus required /></label>
 <label style={{ display: 'grid', gap: 6 }}>New password<input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
 <label style={{ display: 'grid', gap: 6 }}>Confirm new password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
 <small className="muted">After changing your password, other devices will be signed out.</small>
 <Button type="submit" className="outline" disabled={changingPassword}>{changingPassword ? 'Changing password…' : 'Change password'}</Button>
-</fieldset></form></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => { const confirmName = prompt('Permanently delete your account, all posts and conversations? Type your username to confirm.'); if (confirmName)
-        act(async () => { await api('users', 'DELETE', { confirm: confirmName }); location.replace('/?auth=login'); }); }}><Trash2 size={16}/>Delete account</Button></div></section>}
- </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home'], [Compass, 'explore'], [Plus, 'create'], [MessageCircle, 'messages'], [Users, 'profile']].map(([Icon, v]: any) => <button key={v} className={page === v ? 'selected' : ''} aria-label={v} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : navigate(v)}><Icon size={22}/></button>)}</nav></div>
+</fieldset></form></Modal>}
  {compose && <Composer value={compose} close={() => setCompose(null)} saved={async () => { setCompose(null); await loadPosts(); await refreshAux(); tell(compose.kind === 'story' ? 'Your story is live for 24 hours.' : 'Your moment has been saved.'); }}/>}
  {edit && <ProfileEditor user={me} close={() => setEdit(false)} saved={async (username: string) => { setEdit(false); await bootAuth(); if (profile)
         await openProfile(username); tell('Profile updated.'); }}/>}
