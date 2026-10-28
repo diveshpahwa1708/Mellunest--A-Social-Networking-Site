@@ -310,6 +310,8 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             }
             if (method === 'POST' && !p[1] || method === 'PATCH' && p[1]) {
                 const b: any = await req.json(), caption = str(b.caption), status = b.status === 'draft' ? 'draft' : 'published', id = p[1] || uid();
+                if (['user_id', 'userId', 'owner_id', 'ownerId'].some(key => b[key] !== undefined && b[key] !== u.id))
+                    fail(403, 'You can only publish moments to your own account.');
                 if (p[1]) {
                     const post = await canPost(id, u);
                     if (post.user_id !== u.id)
@@ -327,7 +329,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                 const q: [
                     string,
                     ...any[]
-                ][] = [p[1] ? ['UPDATE posts SET caption=?,status=?,updated=? WHERE id=? AND user_id=?', caption, status, t, id, u.id] : ['INSERT INTO posts(id,user_id,caption,status,created,updated) VALUES(?,?,?,?,?,?)', id, u.id, caption, status, t, t], ['UPDATE media SET post_id=NULL WHERE post_id=?', id]];
+                ][] = [p[1] ? ['UPDATE posts SET caption=?,status=?,updated=? WHERE id=? AND user_id=?', caption, status, t, id, u.id] : ['INSERT INTO posts(id,user_id,caption,status,created,updated) VALUES(?,?,?,?,?,?)', id, u.id, caption, status, t, t], ['UPDATE media SET post_id=NULL WHERE post_id=? AND user_id=?', id, u.id]];
                 for (const mid of ids)
                     q.push(['UPDATE media SET post_id=? WHERE id=? AND user_id=?', id, mid, u.id]);
                 await batch(q);
