@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, ArrowUpRight, ArrowRight, ArrowLeft, X, Send, Sun, Moon, Settings, LogOut, ImagePlus, Film, Trash2, MoreHorizontal, Users, Check, CheckCheck, LoaderCircle, ChevronLeft, ChevronRight, Lock, Globe, ShieldCheck, Leaf, PenLine, Upload, Eye, Link as LinkIcon } from 'lucide-react';
 import {api,media,ago,iconStyle,type Item} from '../lib/api';
+import { VideoPlayer } from './VideoPlayer';
 export function Logo() { return <span className="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M9 32c0 15 10 24 23 24s23-9 23-24M16 32c0 11 6 17 16 17s16-6 16-17M24 17c1-7 8-10 15-8-1 9-7 13-15 8Z"/><circle cx="35" cy="29" r="5"/></svg>mellunest<span className="logodot">.</span></span>; }
 export function Avatar({ user, size = 42 }: {
     user?: Item;
@@ -23,4 +24,4 @@ export function Modal({ title, children, close, wide = false }: {
 export function MediaView({ item, controls = true }: {
     item: Item;
     controls?: boolean;
-}) { return item.mime?.startsWith('video') ? <video src={media(item.id || item.media_id)} controls={controls} playsInline preload="metadata"/> : <img src={media(item.id || item.media_id)} alt="Shared moment" loading="lazy"/>; }
+}) { return item.mime?.startsWith('video') ? (controls ? <VideoPlayer key={item.id || item.media_id} src={media(item.id || item.media_id)}/> : <video src={media(item.id || item.media_id)} playsInline preload="metadata"/>) : <img src={media(item.id || item.media_id)} alt="Shared moment" loading="lazy"/>; }
