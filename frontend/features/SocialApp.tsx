@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, ArrowUpRight, ArrowRight, ArrowLeft, X, Send, Sun, Moon, Settings, LogOut, ImagePlus, Film, Trash2, MoreHorizontal, Users, Check, CheckCheck, LoaderCircle, ChevronLeft, ChevronRight, Lock, Globe, ShieldCheck, Leaf, PenLine, Upload, Eye, Link as LinkIcon } from 'lucide-react';
 import {api,media,ago,iconStyle,type Item} from '../lib/api';
 import {Logo,Avatar,Button,Empty,Modal,MediaView} from '../components/shared';
@@ -17,6 +17,18 @@ export default function App() {
     const pendingActions = useRef(new Set<string>());
     const followRevision = useRef(0);
     const me = auth?.user;
+    const navigationKey = page === 'profile'
+        ? page + ':' + (profile?.id || '') + ':' + profileTab
+        : page === 'home' ? page + ':' + tab
+        : page === 'post' && typeof window !== 'undefined'
+            ? page + ':' + (new URLSearchParams(window.location.search).get('post') || '')
+            : page;
+    useLayoutEffect(() => {
+        // Reset after the destination renders, before paint; background refreshes
+        // and loading more posts retain the reader's position.
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }, [navigationKey]);
+
     const tell = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 4500); };
     const act = async (fn: () => Promise<any>) => { try {
         setError('');
