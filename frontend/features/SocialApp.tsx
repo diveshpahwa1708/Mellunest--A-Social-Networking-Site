@@ -16,6 +16,8 @@ export default function App() {
     const bottom = useRef<HTMLDivElement>(null), chatPane = useRef<HTMLDivElement>(null), nearBottom = useRef(true), refreshRef = useRef<() => void>(() => { }), currentRef = useRef<Item | null>(null);
     const pendingActions = useRef(new Set<string>());
     const followRevision = useRef(0);
+    const messageRevision = useRef(0);
+    const sendLock = useRef(false);
     const me = auth?.user;
     const navigationKey = page === 'profile'
         ? page + ':' + (profile?.id || '') + ':' + profileTab
@@ -98,9 +100,10 @@ export default function App() {
     useEffect(() => { if (!me || page !== 'explore')
         return; const timer = setTimeout(() => api('users?q=' + encodeURIComponent(search)).then(r => setPeople(r.items)).catch(e => setError(e.message)), 250); return () => clearTimeout(timer); }, [search, page, me?.id]);
     useEffect(() => { currentRef.current = current; }, [current]);
-    const loadMessages = async (id: string, older = false) => { const r = await api('messages/' + id + (older && messages.length ? '?before=' + messages[0].created : '')); if (currentRef.current?.conversation_id !== id)
+    const loadMessages = async (id: string, older = false) => { const revision = messageRevision.current; const r = await api('messages/' + id + (older && messages.length ? '?before=' + messages[0].created : '')); if (currentRef.current?.conversation_id !== id || revision !== messageRevision.current)
         return; setMessages(old => older ? [...r.items.reverse(), ...old] : r.items.reverse()); if (!older) {
-        await api('messages/' + id, 'POST', { read: true });
+        if (r.items.some((m: Item) => m.sender !== me.id && !m.read))
+            void api('messages/' + id, 'POST', { read: true }).catch(() => {});
         if (nearBottom.current)
             setTimeout(() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 80);
     } };
@@ -173,6 +176,32 @@ export default function App() {
         tell('Post link copied.');
     } });
     const openComments = async (p: Item) => act(async () => { setComments(p); const r = await api('comments/' + p.id); setCommentItems(r.items); });
+    const sendMessage = async () => {
+        const conversationId = currentRef.current?.conversation_id;
+        const body = message.trim();
+        if (!body || !conversationId || sendLock.current) return;
+        sendLock.current = true;
+        setSending(true);
+        setError('');
+        try {
+            const result = await api('messages/' + conversationId, 'POST', { id: crypto.randomUUID(), body });
+            messageRevision.current++;
+            if (currentRef.current?.conversation_id === conversationId) {
+                setMessages(old => old.some(m => m.id === result.item.id) ? old : [...old, result.item]);
+                setMessage(old => old.trim() === body ? '' : old);
+                nearBottom.current = true;
+                requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }));
+            }
+            setConversations(old => old.map(c => c.conversation_id === conversationId
+                ? { ...c, preview: result.item.body, recent: result.item.created } : c)
+                .sort((a, b) => (b.recent || b.created) - (a.recent || a.created)));
+        } catch (e: any) {
+            setError(e.message);
+        } finally {
+            sendLock.current = false;
+            setSending(false);
+        }
+    };
     const logout = () => act(async () => { await api('auth/logout', 'POST', {}); location.replace('/?auth=login'); });
     if (boot)
         return <main className="boot"><Logo /><LoaderCircle className="spin"/><p>Making a little space for you…</p></main>;
@@ -198,8 +227,7 @@ export default function App() {
             act(async () => { await api('posts/' + p.id, 'DELETE'); setItems(items.filter(x => x.id !== p.id)); tell('Moment deleted.'); }); }} interact={(type: string) => interactPost(p, type)}/>)}</div>}{next && <Button className="outline load-more" disabled={loading} onClick={() => loadPosts(true)}>{loading ? 'Loading…' : 'A few more moments'}</Button>}</>}
  </section><aside className="right-rail"><div className="welcome-card"><div className="welcome-art"><span>◒</span><span>◓</span><span>✳</span></div><span className="eyebrow">A SPACE TO BE YOURSELF</span><h2>Less perfect.<br />More present.</h2><p>Your everyday has a story.<br />Let someone in on it.</p><button onClick={() => setCompose({ kind: 'post' })}>Share something real <ArrowUpRight size={17}/></button></div><div className="suggestions"><div className="section-label"><h2>Meet your people</h2><button onClick={() => navigate('explore')}>Explore</button></div>{people.slice(0, 4).map(u => <div className="suggestion" key={u.id}><button className="person-link" onClick={() => openProfile(u.username)}><Avatar user={u}/><span><strong>{u.name}</strong><small>@{u.username}</small></span></button><button className={'follow-small ' + (u.followed ? 'following' : '')} aria-label={(u.followed ? 'Unfollow ' : 'Follow ') + u.name} onClick={() => toggleFollow(u)}>{u.followed ? <Check size={17}/> : <Plus size={17}/>}</button></div>)}{!people.length && <p className="muted">A new community starts with you. Your people will appear here as they join.</p>}</div><div className="community-note"><Globe size={20}/><p>Different worlds.<br /><strong>One shared space.</strong></p></div><footer>Made for the moments between.<br /><span>Mellunest © {new Date().getFullYear()}</span></footer></aside></div>}
  {page === 'messages' && <><div className="page-heading"><div className="eyebrow">KEEP THE CONVERSATION GOING</div><h1>A little closer<span>.</span></h1></div><div className="chat-layout"><section className="conversation-list"><header><h2>Conversations</h2><button className="icon-button" aria-label="Start conversation" onClick={() => setList({ title: 'Start a conversation', items: people })}><PenLine size={19}/></button></header><div className="connection"><span className={'status-dot ' + (!connected ? 'offline' : '')}/>{connected ? 'Connected · live updates' : 'Reconnecting…'}</div>{conversations.map(c => <button className={'conversation ' + (current?.conversation_id === c.conversation_id ? 'selected' : '')} key={c.conversation_id} onClick={() => openChat(c)}><Avatar user={c}/><span><strong>{c.name}</strong><small>{c.preview || 'Say your first hello'}</small></span>{c.unread > 0 && <b>{c.unread}</b>}</button>)}{conversations.length === 0 && <Empty title="Start with hello." detail="Find someone in Discover, then tap Message." action={<Button className="soft" onClick={() => navigate('explore')}>Find people</Button>}/>}</section><section className="chat-window">{current ? <><header><button className="person-link" onClick={() => openProfile(current.username)}><Avatar user={current}/><span><strong>{current.name}</strong><small>@{current.username}</small></span></button><ShieldCheck size={19}/></header><div className="chat-history" ref={chatPane} onScroll={() => { const el = chatPane.current; if (el)
-        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button><p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={async (e) => { e.preventDefault(); if (!message.trim() || sending)
-        return; setSending(true); await act(async () => { await api('messages/' + current.conversation_id, 'POST', { id: crypto.randomUUID(), body: message }); setMessage(''); nearBottom.current = true; await loadMessages(current.conversation_id); await refreshAux(); }); setSending(false); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={sending || !message.trim()} aria-label="Send message"><Send size={18}/></Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
+        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button><p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={e => { e.preventDefault(); void sendMessage(); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={sending || !message.trim()} aria-label={sending ? "Sending message" : "Send message"}>{sending ? <LoaderCircle className="spin" size={18}/> : <Send size={18}/>}</Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
  {page === 'notifications' && <section className="activity-page"><div className="page-heading"><div className="eyebrow">THE LITTLE CONNECTIONS</div><h1>Your ripple effect<span>.</span></h1><p>A little love from around your world.</p></div><div className="section-label"><h2>Recent activity</h2><button onClick={() => act(async () => { await api('notifications', 'POST', {}); await refreshAux(); })}>Mark all as read</button></div>{notifications.length ? notifications.map(n => <button key={n.id} className={'notification card ' + (!n.read ? 'unread' : '')} onClick={() => { if (n.kind === 'follow')
         openProfile(n.username);
     else if (n.kind === 'message') {

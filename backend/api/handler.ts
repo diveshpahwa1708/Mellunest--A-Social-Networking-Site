@@ -45,7 +45,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
     const blocked = async (a: string, b: string) => !!await one('SELECT 1 FROM blocks WHERE (user_id=? AND target=?) OR (user_id=? AND target=?)', a, b, b, a);
     const canPost = async (id: string, u: any) => { let post = await one('SELECT * FROM posts WHERE id=? AND (status=\'published\' OR user_id=?)', id, u.id); if (!post || await blocked(u.id, post.user_id))
         fail(404, 'Post not found.'); return post; };
-    const conversation = async (id: string, u: any) => { let c = await one('SELECT * FROM conversations WHERE id=? AND (a=? OR b=?)', id, u.id, u.id); if (!c || await blocked(c.a, c.b))
+    const conversation = async (id: string, u: any) => { let c = await one('SELECT c.* FROM conversations c WHERE c.id=? AND (c.a=? OR c.b=?) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=c.a AND b.target=c.b) OR (b.user_id=c.b AND b.target=c.a))', id, u.id, u.id); if (!c)
         fail(404, 'Conversation not found.'); return c; };
     const notify = async (owner: string, actor: string, kind: string, target: string, id = uid()) => { if (owner !== actor)
         await run('INSERT OR IGNORE INTO notifications(id,user_id,actor,kind,target,created) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND notifications=1)', id, owner, actor, kind, target, now(), owner); };
@@ -457,24 +457,27 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             if (method === 'GET')
                 return json({ items: await all('SELECT * FROM messages WHERE conversation_id=? AND created<? ORDER BY created DESC,id DESC LIMIT 50', c.id, Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER) });
             if (method === 'POST') {
-                await limit('message:' + u.id, 30);
                 const b: any = await req.json();
                 if (b.read) {
                     await run('UPDATE messages SET read=1 WHERE conversation_id=? AND sender!=? AND read=0', c.id, u.id);
                     return json({ ok: true });
                 }
+                await limit('message:' + u.id, 30);
                 const body = str(b.body, 2000), id = str(b.id, 40);
                 if (!body || !/^[a-f0-9-]{36}$/.test(id))
                     fail(400, 'Write a message first.');
-                const existing = await one('SELECT sender,conversation_id FROM messages WHERE id=?', id);
+                const existing = await one('SELECT * FROM messages WHERE id=?', id);
                 if (existing && (existing.sender !== u.id || existing.conversation_id !== c.id))
                     fail(409, 'Message identifier already used.');
                 const recipient = c.a === u.id ? c.b : c.a;
                 if (!await one('SELECT 1 FROM users WHERE id=? AND messages=1', recipient))
                     fail(403, 'This account is not accepting messages.');
-                await run('INSERT OR IGNORE INTO messages(id,conversation_id,sender,body,created) VALUES(?,?,?,?,?)', id, c.id, u.id, body, now());
-                await notify(recipient, u.id, 'message', c.id, id);
-                return json({ id }, 201);
+                const t = now();
+                await batch([
+                    ['INSERT OR IGNORE INTO messages(id,conversation_id,sender,body,created) VALUES(?,?,?,?,?)', id, c.id, u.id, body, t],
+                    ['INSERT OR IGNORE INTO notifications(id,user_id,actor,kind,target,created) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND notifications=1)', id, recipient, u.id, 'message', c.id, t, recipient]
+                ]);
+                return json({ id, item: existing || { id, conversation_id: c.id, sender: u.id, body, created: t, read: 0 } }, 201);
             }
         }
         if (p[0] === 'notifications') {
