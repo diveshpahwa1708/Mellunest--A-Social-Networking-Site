@@ -9,7 +9,7 @@
     {
       "binding": "DB",
       "database_name": "mellunest-db",
-      "database_id": "00000000-0000-4000-8000-000000000000",
+      "database_id": "57f04d64-b7b1-4aed-9fbd-f38f06d130ab",
       "migrations_dir": "drizzle"
     }
   ],
