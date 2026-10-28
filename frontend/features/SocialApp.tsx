@@ -14,6 +14,8 @@ export default function App() {
         items: Item[];
     } | null>(null), [dark, setDark] = useState(false), [authMode, setAuthMode] = useState('login'), [token, setToken] = useState('');
     const bottom = useRef<HTMLDivElement>(null), chatPane = useRef<HTMLDivElement>(null), nearBottom = useRef(true), refreshRef = useRef<() => void>(() => { }), currentRef = useRef<Item | null>(null);
+    const pendingActions = useRef(new Set<string>());
+    const followRevision = useRef(0);
     const me = auth?.user;
     const tell = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 4500); };
     const act = async (fn: () => Promise<any>) => { try {
@@ -51,7 +53,7 @@ export default function App() {
         setError(e.message);
     } }, []);
     const refreshAux = useCallback(async () => { if (!me)
-        return; const results = await Promise.all([api('stories'), api('users'), api('notifications'), api('conversations')]); setStories(results[0].items); setPeople(results[1].items); setNotifications(results[2].items); setConversations(results[3].items); }, [me?.id]);
+        return; const revision = followRevision.current; const results = await Promise.all([api('stories'), api('users'), api('notifications'), api('conversations')]); setStories(results[0].items); if (revision === followRevision.current && ![...pendingActions.current].some(key => key.startsWith('follow:'))) setPeople(results[1].items); setNotifications(results[2].items); setConversations(results[3].items); }, [me?.id]);
     const loadPosts = useCallback(async (append = false) => { if (!me)
         return; setLoading(true); try {
         let q = 'posts?scope=' + ((page === 'profile' && profileTab !== 'posts') ? profileTab : page === 'saved' ? 'saved' : page === 'home' && tab === 'following' ? 'following' : 'all');
@@ -101,10 +103,48 @@ export default function App() {
     } api('stories/' + s.id + '/view', 'POST', {}).catch(() => { }); const timer = setTimeout(() => setStoryIndex(i => i === null ? null : i + 1 < stories.length ? i + 1 : null), s.mime?.startsWith('video') ? 30000 : 7000); return () => clearTimeout(timer); }, [storyIndex, stories.length]);
     const navigate = (v: string) => { setPage(v); setError(''); history.replaceState({}, '', '/'); if (v === 'profile')
         openProfile(me.username); };
-    const toggleFollow = async (u: Item) => act(async () => { await api('follow/' + u.id, 'POST', { active: !u.followed }); await refreshAux(); if (profile?.id === u.id) {
-        const r = await api('users/' + u.username);
-        setProfile(r.items[0]);
-    } });
+    const toggleFollow = async (u: Item) => {
+        const key = 'follow:' + u.id;
+        if (pendingActions.current.has(key)) return;
+        pendingActions.current.add(key);
+        followRevision.current++;
+        const previous = !!u.followed, active = !previous;
+        const apply = (value: boolean, delta: number) => {
+            setPeople(old => old.map(x => x.id === u.id ? { ...x, followed: value } : x));
+            setProfile(old => old?.id === u.id ? { ...old, followed: value, followers: Math.max(0, Number(old.followers || 0) + delta) } : old);
+        };
+        apply(active, active ? 1 : -1);
+        try {
+            setError('');
+            await api('follow/' + u.id, 'POST', { active });
+        } catch (e: any) {
+            apply(previous, active ? -1 : 1);
+            setError(e.message);
+        } finally {
+            followRevision.current++;
+            pendingActions.current.delete(key);
+        }
+    };
+    const interactPost = async (p: Item, type: string) => {
+        const key = type + ':' + p.id;
+        if (pendingActions.current.has(key)) return;
+        pendingActions.current.add(key);
+        const field = type === 'like' ? 'liked' : 'saved';
+        const previous = !!p[field], active = !previous;
+        const apply = (value: boolean, delta: number) => setItems(old => old.map(x =>
+            x.id === p.id ? { ...x, [field]: value, likes: Math.max(0, Number(x.likes || 0) + delta) } : x));
+        const delta = type === 'like' ? (active ? 1 : -1) : 0;
+        apply(active, delta);
+        try {
+            setError('');
+            await api(type + '/' + p.id, 'POST', { active });
+        } catch (e: any) {
+            apply(previous, -delta);
+            setError(e.message);
+        } finally {
+            pendingActions.current.delete(key);
+        }
+    };
     const startChat = async (u: Item) => act(async () => { const c = await api('conversations', 'POST', { target: u.id }); const entry = { ...u, conversation_id: c.id }; setCurrent(entry); currentRef.current = entry; setMessages([]); setPage('messages'); await loadMessages(c.id); await refreshAux(); });
     const openChat = async (c: Item) => { setCurrent(c); currentRef.current = c; setMessages([]); nearBottom.current = true; await act(() => loadMessages(c.conversation_id)); };
     const share = async (p: Item) => act(async () => { const url = location.origin + '/?post=' + p.id; if (navigator.share) {
@@ -143,7 +183,7 @@ export default function App() {
  {page === 'profile' && profile && <><div className="profile-cover"><span>Every perspective has a place.</span><div className="cover-circles"/></div><div className="profile-info"><Avatar user={profile} size={100}/><div className="profile-buttons">{profileOwn ? <Button className="outline" onClick={() => setEdit(true)}><PenLine size={15}/>Edit profile</Button> : <><Button onClick={() => toggleFollow(profile)}>{profile.followed ? 'Following' : 'Follow'}{profile.followed ? <Check size={16}/> : <Plus size={16}/>}</Button><Button className="outline" onClick={() => startChat(profile)}><MessageCircle size={16}/>Message</Button></>}</div><h1>{profile.name}</h1><p className="muted">@{profile.username}</p><p className="bio">{profile.bio || 'A new perspective, a story still unfolding.'}</p>{profile.website && <a href={profile.website} target="_blank" rel="noopener noreferrer" className="profile-link"><LinkIcon size={14}/>{profile.website.replace(/^https?:\/\//, '')}</a>}<div className="profile-stats"><span><b>{profile.posts}</b> moments</span>{['followers', 'following'].map(type => <button key={type} onClick={() => act(async () => { const r = await api('connections/' + profile.id + '?type=' + type); setList({ title: type === 'followers' ? 'Followers' : 'Following', items: r.items }); })}><b>{profile[type]}</b> {type}</button>)}</div></div><div className="feed-tabs">{(profileOwn ? ['posts', 'saved', 'drafts', 'about'] : ['posts', 'about']).map(t => <button key={t} className={profileTab === t ? 'selected' : ''} onClick={() => setProfileTab(t)}>{t === 'posts' ? 'Moments' : t[0].toUpperCase() + t.slice(1)}{['saved', 'drafts'].includes(t) && <Lock size={12}/>}</button>)}</div>{profileTab === 'about' && <div className="card about-card"><h2>A little about {profile.name}</h2><p>{profile.bio || 'No bio added yet.'}</p><p className="muted">Part of Mellunest since {new Date(profile.created).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>{!profileOwn && <Button className="outline danger" onClick={() => { if (confirm('Block @' + profile.username + '? You will no longer see each other’s content or receive messages from each other.'))
             act(async () => { await api('blocks', 'POST', { target: profile.id, active: true }); navigate('home'); tell('Account blocked.'); }); }}>Block account</Button>}</div>}</>}
  {!(page === 'profile' && profileTab === 'about') && <>{loading && items.length === 0 ? <div className="skeleton-card"><div /><div /><div /></div> : items.length === 0 ? <Empty title={profileTab === 'drafts' && page === 'profile' ? 'An idea starts here.' : page === 'saved' ? 'Save a little inspiration.' : page === 'home' && tab === 'following' ? 'Your circle is waiting.' : 'The first moment is yours.'} detail={page === 'saved' ? 'Tap the bookmark on any post to keep it here.' : page === 'home' && tab === 'following' ? 'Discover someone new and follow them to see their moments here.' : 'This space grows with the things you share. A photo, a thought, a little slice of life.'} action={<Button onClick={() => page === 'home' && tab === 'following' ? navigate('explore') : setCompose({ kind: 'post' })}>{page === 'home' && tab === 'following' ? 'Discover people' : 'Share your first moment'}<ArrowRight size={16}/></Button>}/> : <div className={page === 'explore' ? 'explore-posts' : ''}>{items.map(p => <PostCard key={p.id} post={p} me={me} profile={openProfile} comment={() => openComments(p)} share={() => share(p)} edit={() => setCompose({ ...p, kind: 'post' })} remove={() => { if (confirm('Delete this moment and its comments? This cannot be undone.'))
-            act(async () => { await api('posts/' + p.id, 'DELETE'); setItems(items.filter(x => x.id !== p.id)); tell('Moment deleted.'); }); }} interact={(type: string) => act(async () => { await api(type + '/' + p.id, 'POST', { active: !p[type === 'like' ? 'liked' : 'saved'] }); setItems(old => old.map(x => x.id === p.id ? { ...x, [type === 'like' ? 'liked' : 'saved']: !p[type === 'like' ? 'liked' : 'saved'], likes: p.likes + (type === 'like' ? (p.liked ? -1 : 1) : 0) } : x)); })}/>)}</div>}{next && <Button className="outline load-more" disabled={loading} onClick={() => loadPosts(true)}>{loading ? 'Loading…' : 'A few more moments'}</Button>}</>}
+            act(async () => { await api('posts/' + p.id, 'DELETE'); setItems(items.filter(x => x.id !== p.id)); tell('Moment deleted.'); }); }} interact={(type: string) => interactPost(p, type)}/>)}</div>}{next && <Button className="outline load-more" disabled={loading} onClick={() => loadPosts(true)}>{loading ? 'Loading…' : 'A few more moments'}</Button>}</>}
  </section><aside className="right-rail"><div className="welcome-card"><div className="welcome-art"><span>◒</span><span>◓</span><span>✳</span></div><span className="eyebrow">A SPACE TO BE YOURSELF</span><h2>Less perfect.<br />More present.</h2><p>Your everyday has a story.<br />Let someone in on it.</p><button onClick={() => setCompose({ kind: 'post' })}>Share something real <ArrowUpRight size={17}/></button></div><div className="suggestions"><div className="section-label"><h2>Meet your people</h2><button onClick={() => navigate('explore')}>Explore</button></div>{people.slice(0, 4).map(u => <div className="suggestion" key={u.id}><button className="person-link" onClick={() => openProfile(u.username)}><Avatar user={u}/><span><strong>{u.name}</strong><small>@{u.username}</small></span></button><button className={'follow-small ' + (u.followed ? 'following' : '')} aria-label={(u.followed ? 'Unfollow ' : 'Follow ') + u.name} onClick={() => toggleFollow(u)}>{u.followed ? <Check size={17}/> : <Plus size={17}/>}</button></div>)}{!people.length && <p className="muted">A new community starts with you. Your people will appear here as they join.</p>}</div><div className="community-note"><Globe size={20}/><p>Different worlds.<br /><strong>One shared space.</strong></p></div><footer>Made for the moments between.<br /><span>Mellunest © {new Date().getFullYear()}</span></footer></aside></div>}
  {page === 'messages' && <><div className="page-heading"><div className="eyebrow">KEEP THE CONVERSATION GOING</div><h1>A little closer<span>.</span></h1></div><div className="chat-layout"><section className="conversation-list"><header><h2>Conversations</h2><button className="icon-button" aria-label="Start conversation" onClick={() => setList({ title: 'Start a conversation', items: people })}><PenLine size={19}/></button></header><div className="connection"><span className={'status-dot ' + (!connected ? 'offline' : '')}/>{connected ? 'Connected · live updates' : 'Reconnecting…'}</div>{conversations.map(c => <button className={'conversation ' + (current?.conversation_id === c.conversation_id ? 'selected' : '')} key={c.conversation_id} onClick={() => openChat(c)}><Avatar user={c}/><span><strong>{c.name}</strong><small>{c.preview || 'Say your first hello'}</small></span>{c.unread > 0 && <b>{c.unread}</b>}</button>)}{conversations.length === 0 && <Empty title="Start with hello." detail="Find someone in Discover, then tap Message." action={<Button className="soft" onClick={() => navigate('explore')}>Find people</Button>}/>}</section><section className="chat-window">{current ? <><header><button className="person-link" onClick={() => openProfile(current.username)}><Avatar user={current}/><span><strong>{current.name}</strong><small>@{current.username}</small></span></button><ShieldCheck size={19}/></header><div className="chat-history" ref={chatPane} onScroll={() => { const el = chatPane.current; if (el)
         nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button><p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={async (e) => { e.preventDefault(); if (!message.trim() || sending)

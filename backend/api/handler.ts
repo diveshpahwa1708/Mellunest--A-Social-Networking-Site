@@ -276,8 +276,17 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                     args = [p[1], u.id];
                 }
                 const rows = await all(`SELECT p.*,u.username,u.name,u.avatar,(SELECT count(*) FROM likes WHERE post_id=p.id) likes,(SELECT count(*) FROM comments WHERE post_id=p.id) comments,EXISTS(SELECT 1 FROM likes WHERE post_id=p.id AND user_id=?) liked,EXISTS(SELECT 1 FROM saves WHERE post_id=p.id AND user_id=?) saved FROM posts p JOIN users u ON u.id=p.user_id WHERE ${where} AND p.created<? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=p.user_id) OR(b.target=? AND b.user_id=p.user_id)) ORDER BY p.created DESC,p.id DESC LIMIT 20`, u.id, u.id, ...args, before, u.id, u.id);
-                for (const row of rows)
-                    row.media = await all('SELECT id,mime FROM media WHERE post_id=? ORDER BY created,id', row.id);
+                const mediaRows = rows.length ? await all(
+                    'SELECT id,mime,post_id FROM media WHERE post_id IN (' + rows.map(() => '?').join(',') + ') ORDER BY created,id',
+                    ...rows.map(row => row.id)
+                ) : [];
+                const mediaByPost = new Map<string, any[]>();
+                for (const item of mediaRows) {
+                    const list = mediaByPost.get(item.post_id) || [];
+                    list.push({ id: item.id, mime: item.mime });
+                    mediaByPost.set(item.post_id, list);
+                }
+                for (const row of rows) row.media = mediaByPost.get(row.id) || [];
                 return json({ items: rows, next: rows.length === 20 ? rows[rows.length - 1].created : null });
             }
             if (method === 'POST' && !p[1] || method === 'PATCH' && p[1]) {
