@@ -128,6 +128,25 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                     await run('DELETE FROM sessions WHERE token=?', await digest(cookie));
                 return json({ ok: true }, 200, { 'Set-Cookie': 'mellunest=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0' });
             }
+            if (p[1] === 'change-password') {
+                const u = await user();
+                await limit('change-password:' + u.id, 5, 15 * 60000);
+                const nextPassword = password(b.newPassword);
+                if (nextPassword !== b.confirmPassword)
+                    fail(400, 'New passwords do not match.');
+                if (typeof b.oldPassword !== 'string' || new TextEncoder().encode(b.oldPassword).length > 72 ||
+                    !u.password || !await compare(b.oldPassword, u.password))
+                    fail(400, 'Old password is incorrect.');
+                const nextHash = await hash(nextPassword, 12);
+                const changed = await one('UPDATE users SET password=? WHERE id=? AND password=? RETURNING id', nextHash, u.id, u.password);
+                if (!changed)
+                    fail(409, 'Password was changed in another request. Please try again.');
+                await batch([
+                    ['DELETE FROM sessions WHERE user_id=? AND token<>?', u.id, await digest(cookie || '')],
+                    ['DELETE FROM tokens WHERE user_id=? AND kind=?', u.id, 'reset']
+                ]);
+                return json({ message: 'Password changed successfully. Other devices have been signed out.' });
+            }
             if (p[1] === 'forgot') {
                 if (!env.RESEND_API_KEY)
                     fail(503, 'Email recovery is awaiting email-service setup.');
