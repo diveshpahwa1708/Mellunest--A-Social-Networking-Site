@@ -8,7 +8,7 @@ export function Avatar({ user, size = 42 }: {
     user?: Item;
     size?: number;
 }) { return <span className="avatar" style={{ width: size, height: size, fontSize: size * .35 }}>{user?.avatar ? <img src={media(user.avatar)} alt=""/> : (user?.name || user?.username || 'V').slice(0, 1).toUpperCase()}</span>; }
-export function Button({ children, onClick, className = '', ...props }: any) { return <button className={'button ' + className} onClick={onClick} {...props}>{children}</button>; }
+export function Button({ children, onClick, className = '', ...props }: any) { return <button type="button" className={'button ' + className} onClick={onClick} {...props}>{children}</button>; }
 export function Empty({ title, detail, action }: {
     title: string;
     detail: string;
@@ -19,8 +19,31 @@ export function Modal({ title, children, close, wide = false }: {
     children: React.ReactNode;
     close: () => void;
     wide?: boolean;
-}) { const ref = useRef<HTMLDialogElement>(null); useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []); return <dialog className={'modal ' + (wide ? 'wide' : '')} ref={ref} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === e.currentTarget)
-    close(); }}><header><h2>{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={close}><X /></button></header>{children}</dialog>; }
+}) {
+    const ref = useRef<HTMLDialogElement>(null);
+    const backdropStart = useRef(false);
+    useEffect(() => {
+        const dialog = ref.current;
+        const previousOverflow = document.body.style.overflow;
+        dialog?.showModal();
+        document.body.style.overflow = 'hidden';
+        return () => { dialog?.close(); document.body.style.overflow = previousOverflow; };
+    }, []);
+    const outside = (x: number, y: number) => {
+        const box = ref.current?.getBoundingClientRect();
+        return !!box && (x < box.left || x > box.right || y < box.top || y > box.bottom);
+    };
+    return <dialog className={'modal ' + (wide ? 'wide' : '')} ref={ref}
+        onCancel={e => { e.preventDefault(); close(); }}
+        onPointerDown={e => { backdropStart.current = e.target === e.currentTarget && outside(e.clientX, e.clientY); }}
+        onPointerCancel={() => { backdropStart.current = false; }}
+        onClick={e => {
+            if (backdropStart.current && e.target === e.currentTarget && outside(e.clientX, e.clientY)) close();
+            backdropStart.current = false;
+        }}>
+        <header><h2>{title}</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={close}><X /></button></header>{children}
+    </dialog>;
+}
 export function MediaView({ item, controls = true }: {
     item: Item;
     controls?: boolean;

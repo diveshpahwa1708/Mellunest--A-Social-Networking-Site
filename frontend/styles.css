@@ -132,3 +132,53 @@
     .message-content{--chat-scroll-track:Canvas;--chat-scroll-thumb:ButtonText;--chat-scroll-hover:Highlight;--chat-scroll-active:Highlight}
     .message-content :is(.chat-history,.conversation-list){scrollbar-color:auto}
 }
+
+/* Touch-first interactions: preserve scrolling and pinch zoom. */
+button,a,input,textarea,select,[role=button]{touch-action:manipulation}
+.navigation-status{display:flex;min-height:180px;align-items:center;justify-content:center;gap:12px;flex-direction:column;color:var(--muted);padding:24px;text-align:center}
+.navigation-status.compact{min-height:80px;padding:12px}
+.mobile-menu-options{padding:12px;display:grid;gap:6px}
+.mobile-menu-options>button{display:flex;align-items:center;gap:14px;min-height:52px;border-radius:12px;padding:12px 16px;text-align:left}
+.mobile-menu-options>button>span{flex:1}
+.mobile-menu-options>button:active{background:var(--soft)}
+.modal{overscroll-behavior:contain}
+@media(any-pointer:coarse){
+    .button,.icon-button,.text-button,.nav-item,.top-avatar,.search-trigger,.follow-small,
+    .feed-tabs>button,.post-actions>button,.profile-stats>button,.mn-player-action,
+    .story-prev,.story-next,.media-prev,.media-next,.auth-switch button,.settings-actions button{
+        min-width:44px;min-height:44px;
+    }
+    .button:hover:not(:disabled),.mn-player-big-play:hover{transform:none}
+    button:active:not(:disabled){filter:brightness(.93)}
+    .person-link{min-height:44px}
+    .top-avatar{display:grid;place-items:center}
+    .post-actions{gap:8px;flex-wrap:wrap}
+    .post-actions>button{padding:8px}
+    .post-actions .save-action{margin-left:auto}
+    .feed-tabs{gap:14px;overflow-x:auto}
+    .feed-tabs>button{flex-shrink:0}
+    .toggle{min-width:48px;min-height:44px}
+    .dropdown button{min-height:48px}
+    .mn-player-speed{min-height:44px}
+    .upload-previews>div>button{width:44px;height:44px}
+    input:not([type=range]):not([type=checkbox]):not([type=radio]),textarea,select,
+    .message-form input,.search-field input,.auth-form-wrap input{font-size:16px}
+    .sidebar{overflow-y:auto;overscroll-behavior:contain}
+    .sidebar nav{flex-shrink:0}
+}
+@media(max-width:540px){
+    .mobile-nav{padding:6px 4px calc(6px + env(safe-area-inset-bottom));gap:2px}
+    .mobile-nav button{flex:1;min-width:44px;width:auto;height:54px;display:flex;flex-direction:column;justify-content:center;gap:3px}
+    .mobile-nav button>span{font-size:9px;font-weight:600;line-height:1.2}
+    .content{padding-bottom:calc(90px + env(safe-area-inset-bottom))}
+    .main-wrap>.message-content{padding-bottom:calc(78px + env(safe-area-inset-bottom))}
+    .topbar{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+    .topbar>div:first-child{min-width:0}
+    .topbar-title{font-size:10px}
+    .top-actions{flex-shrink:0;gap:0}
+    .setting-row{flex-wrap:wrap}
+    .setting-row>span{flex:1;min-width:130px}
+    .profile-buttons{flex-wrap:wrap}
+    .composer-footer{flex-wrap:wrap}
+    .modal{max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+}

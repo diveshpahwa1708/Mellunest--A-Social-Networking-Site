@@ -25,6 +25,11 @@ export default function App() {
     const [feedRevision, setFeedRevision] = useState(0);
     const postRequest = useRef(0);
     const profileRequest = useRef(0);
+    const [mobileMenu, setMobileMenu] = useState(false);
+    const [profilePending, setProfilePending] = useState(false);
+    const profileTarget = useRef('');
+    const [chatLoading, setChatLoading] = useState(false);
+    const chatTarget = useRef('');
     const me = auth?.user;
     const navigationKey = page === 'profile'
         ? page + ':' + (profile?.id || '') + ':' + profileTab
@@ -63,25 +68,40 @@ export default function App() {
         setToken(params.get('token') || '');
     } const d = localStorage.getItem('mellunest-theme') === 'dark'; setDark(d); }, []);
     useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('mellunest-theme', dark ? 'dark' : 'light'); }, [dark]);
-    const openProfile = useCallback(async (name: string) => { const request = ++profileRequest.current; ++postRequest.current; try {
-        const r = await api('users/' + encodeURIComponent(name));
-        if (request !== profileRequest.current) return;
+    const openProfile = useCallback(async (name: string) => {
+        if (profileTarget.current === name) return;
+        const request = ++profileRequest.current;
+        profileTarget.current = name;
+        chatTarget.current = '';
         ++postRequest.current;
+        setMobileMenu(false);
+        setPage('profile');
+        setProfile(null);
+        setProfileTab('posts');
+        setProfilePending(true);
         setItems([]);
         setNext(null);
         setLoading(true);
-        setProfile(r.items[0]);
-        setFeedRevision(value => value + 1);
-        setProfileTab('posts');
-        setPage('profile');
+        setError('');
         history.replaceState({}, '', '/?profile=' + encodeURIComponent(name));
-    }
-    catch (e: any) {
-        setError(e.message);
-    } }, []);
+        try {
+            const r = await api('users/' + encodeURIComponent(name));
+            if (request !== profileRequest.current) return;
+            setProfile(r.items[0]);
+            setFeedRevision(value => value + 1);
+        } catch (e: any) {
+            if (request === profileRequest.current) setError(e.message);
+        } finally {
+            if (request === profileRequest.current) {
+                profileTarget.current = '';
+                setProfilePending(false);
+                setLoading(false);
+            }
+        }
+    }, []);
     const refreshAux = useCallback(async () => { if (!me)
         return; const revision = followRevision.current; const results = await Promise.all([api('stories'), api('users'), api('notifications'), api('conversations')]); setStories(results[0].items); if (revision === followRevision.current && ![...pendingActions.current].some(key => key.startsWith('follow:'))) setPeople(results[1].items); setNotifications(results[2].items); setConversations(results[3].items); }, [me?.id]);
-    const loadPosts = useCallback(async (append = false) => { if (!me)
+    const loadPosts = useCallback(async (append = false) => { if (!me || (page === 'profile' && (!profile || profilePending || profileTab === 'about')))
         return; const request = ++postRequest.current; setLoading(true); try {
         let q = 'posts?scope=' + ((page === 'profile' && profileTab !== 'posts') ? profileTab : page === 'saved' ? 'saved' : page === 'home' && tab === 'following' ? 'following' : 'all');
         if (page === 'profile' && profileTab === 'posts')
@@ -100,7 +120,7 @@ export default function App() {
     }
     finally {
         if (request === postRequest.current) setLoading(false);
-    } }, [me?.id, page, tab, profile?.username, profileTab, next]);
+    } }, [me?.id, page, tab, profile?.username, profileTab, next, profilePending]);
     useEffect(() => { if (me) {
         refreshAux().catch(e => setError(e.message));
         const q = new URLSearchParams(location.search);
@@ -110,7 +130,7 @@ export default function App() {
             setPage('post');
     } }, [me?.id]);
     useEffect(() => { if (me && ['home', 'explore', 'profile', 'saved', 'post'].includes(page))
-        loadPosts(); }, [me?.id, page, tab, profile?.username, profileTab, feedRevision]);
+        loadPosts(); }, [me?.id, page, tab, profile?.username, profileTab, feedRevision, profilePending]);
     useEffect(() => { if (!me || page !== 'explore')
         return; const timer = setTimeout(() => api('users?q=' + encodeURIComponent(search)).then(r => setPeople(r.items)).catch(e => setError(e.message)), 250); return () => clearTimeout(timer); }, [search, page, me?.id]);
     useEffect(() => { currentRef.current = current; }, [current]);
@@ -130,8 +150,26 @@ export default function App() {
         setStoryIndex(null);
         return;
     } api('stories/' + s.id + '/view', 'POST', {}).catch(() => { }); const timer = setTimeout(() => setStoryIndex(i => i === null ? null : i + 1 < stories.length ? i + 1 : null), s.mime?.startsWith('video') ? 30000 : 7000); return () => clearTimeout(timer); }, [storyIndex, stories.length]);
-    const navigate = (v: string) => { ++profileRequest.current; ++postRequest.current; setItems([]); setNext(null); setPage(v); setError(''); history.replaceState({}, '', '/'); if (v === 'profile')
-        openProfile(me.username); };
+    const navigate = (v: string) => {
+        setMobileMenu(false);
+        if (v === 'profile') { void openProfile(me.username); return; }
+        if (v === page) {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            return;
+        }
+        ++profileRequest.current;
+        profileTarget.current = '';
+        chatTarget.current = '';
+        setProfilePending(false);
+        setChatLoading(false);
+        ++postRequest.current;
+        setItems([]);
+        setNext(null);
+        setLoading(['home', 'explore', 'saved', 'post'].includes(v));
+        setPage(v);
+        setError('');
+        history.replaceState({}, '', '/');
+    };
     const toggleFollow = async (u: Item) => {
         const key = 'follow:' + u.id;
         if (pendingActions.current.has(key)) return;
@@ -140,7 +178,7 @@ export default function App() {
         const previous = !!u.followed, active = !previous;
         const apply = (value: boolean, delta: number) => {
             setPeople(old => old.map(x => x.id === u.id ? { ...x, followed: value } : x));
-            setProfile(old => old?.id === u.id ? { ...old, followed: value, followers: Math.max(0, Number(old.followers || 0) + delta) } : old);
+            setProfile(old => old && old.id === u.id ? { ...old, followed: value, followers: Math.max(0, Number(old.followers || 0) + delta) } : old);
         };
         apply(active, active ? 1 : -1);
         try {
@@ -174,8 +212,52 @@ export default function App() {
             pendingActions.current.delete(key);
         }
     };
-    const startChat = async (u: Item) => act(async () => { const c = await api('conversations', 'POST', { target: u.id }); const entry = { ...u, conversation_id: c.id }; setCurrent(entry); currentRef.current = entry; setMessages([]); setPage('messages'); await loadMessages(c.id); await refreshAux(); });
-    const openChat = async (c: Item) => { setCurrent(c); currentRef.current = c; setMessages([]); nearBottom.current = true; await act(() => loadMessages(c.conversation_id)); };
+    const startChat = async (u: Item) => {
+        if (chatTarget.current === u.id) return;
+        const request = ++profileRequest.current;
+        chatTarget.current = u.id;
+        profileTarget.current = '';
+        ++postRequest.current;
+        setProfilePending(false);
+        setPage('messages');
+        setMobileMenu(false);
+        setCurrent(null);
+        currentRef.current = null;
+        setMessages([]);
+        setChatLoading(true);
+        setError('');
+        history.replaceState({}, '', '/');
+        try {
+            const c = await api('conversations', 'POST', { target: u.id });
+            if (request !== profileRequest.current) return;
+            const entry = { ...u, conversation_id: c.id };
+            setCurrent(entry);
+            currentRef.current = entry;
+            nearBottom.current = true;
+            await loadMessages(c.id);
+            void refreshAux().catch(() => {});
+        } catch (e: any) {
+            if (request === profileRequest.current) setError(e.message);
+        } finally {
+            if (request === profileRequest.current) {
+                chatTarget.current = '';
+                setChatLoading(false);
+            }
+        }
+    };
+    const openChat = async (c: Item) => {
+        if (currentRef.current?.conversation_id === c.conversation_id) return;
+        const request = ++profileRequest.current;
+        chatTarget.current = '';
+        setCurrent(c);
+        currentRef.current = c;
+        setMessages([]);
+        nearBottom.current = true;
+        setChatLoading(true);
+        try { await loadMessages(c.conversation_id); }
+        catch (e: any) { if (request === profileRequest.current) setError(e.message); }
+        finally { if (request === profileRequest.current) setChatLoading(false); }
+    };
     const share = async (p: Item) => act(async () => { const url = location.origin + '/?post=' + p.id; if (navigator.share) {
         try {
             await navigator.share({ title: 'A moment on Mellunest', url });
@@ -225,9 +307,9 @@ export default function App() {
     const navItems = [['home', 'Your space', House], ['explore', 'Discover', Compass], ['messages', 'Conversations', MessageCircle], ['saved', 'Saved moments', Bookmark], ['notifications', 'Activity', Bell]] as const;
     const profileOwn = profile?.id === me.id;
     const visitingOtherProfile = page === 'profile' && !profileOwn;
-    const viewPost = (p: Item) => { history.replaceState({}, '', '/?post=' + p.id); setPage('post'); setItems([p]); };
+    const viewPost = (p: Item) => { ++profileRequest.current; ++postRequest.current; profileTarget.current = ''; chatTarget.current = ''; setProfilePending(false); history.replaceState({}, '', '/?post=' + p.id); setPage('post'); setItems([p]); };
     return <div className="app-shell">
- <aside className="sidebar"><a href="/" className="brand-link" aria-label="Mellunest home"><Logo /></a><div className="sidebar-note">LIFE IN GOOD COMPANY</div><nav aria-label="Main navigation">{navItems.map(([v, label, Icon]) => <button key={v} className={'nav-item ' + (page === v ? 'active' : '')} onClick={() => navigate(v)}><Icon {...iconStyle}/><span>{label}</span>{v === 'notifications' && unread > 0 && <b>{unread}</b>}{v === 'messages' && conversations.some(c => c.unread > 0) && <i />}</button>)}</nav><Button className="create-button" onClick={() => setCompose({ kind: 'post' })}><Plus size={20}/> Share a moment</Button><div className="sidebar-bottom"><div className="small-note"><span className="tiny-star">✳</span><p>A little more you.<br />A little closer together.</p></div><button className={'nav-item ' + (page === 'settings' ? 'active' : '')} onClick={() => navigate('settings')}><Settings {...iconStyle}/>Settings</button><button className="self-card" onClick={() => openProfile(me.username)}><Avatar user={me}/><span><strong>{me.name}</strong><small>@{me.username}</small></span><ArrowUpRight size={18}/></button></div></aside>
+ <aside className="sidebar"><a href="/" className="brand-link" aria-label="Mellunest home"><Logo /></a><div className="sidebar-note">LIFE IN GOOD COMPANY</div><nav aria-label="Main navigation">{navItems.map(([v, label, Icon]) => <button key={v} aria-label={label} aria-current={page === v ? 'page' : undefined} className={'nav-item ' + (page === v ? 'active' : '')} onClick={() => navigate(v)}><Icon {...iconStyle}/><span>{label}</span>{v === 'notifications' && unread > 0 && <b>{unread}</b>}{v === 'messages' && conversations.some(c => c.unread > 0) && <i />}</button>)}</nav><Button className="create-button" onClick={() => setCompose({ kind: 'post' })}><Plus size={20}/> Share a moment</Button><div className="sidebar-bottom"><div className="small-note"><span className="tiny-star">✳</span><p>A little more you.<br />A little closer together.</p></div><button aria-label="Settings" className={'nav-item ' + (page === 'settings' ? 'active' : '')} onClick={() => navigate('settings')}><Settings {...iconStyle}/>Settings</button><button className="self-card" onClick={() => openProfile(me.username)}><Avatar user={me}/><span><strong>{me.name}</strong><small>@{me.username}</small></span><ArrowUpRight size={18}/></button></div></aside>
  <div className="main-wrap"><header className="topbar"><div><span className="overline">YOUR EVERYDAY, CONNECTED</span><span className="topbar-title">{page === 'messages' ? 'A good conversation starts here.' : page === 'explore' ? 'Find a little inspiration.' : 'Good things happen together.'}</span></div><div className="top-actions"><button className="search-trigger" onClick={() => navigate('explore')}><Search size={17}/><span>Find your people</span><kbd>⌕</kbd></button><button className="icon-button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDark(!dark)}>{dark ? <Sun size={20}/> : <Moon size={20}/>}</button><button className="top-avatar" aria-label="Your profile" onClick={() => openProfile(me.username)}><Avatar user={me} size={36}/></button></div></header>
  {error && <div className="alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss error"><X size={16}/></button></div>}{notice && <div className="toast" role="status"><Check size={18}/>{notice}</div>}
  <main className={'content ' + (page === 'messages' ? 'message-content' : '')}>
@@ -236,13 +318,14 @@ export default function App() {
  {page === 'explore' && <><div className="page-heading"><div className="eyebrow">A WORLD WORTH EXPLORING</div><h1>Follow your curiosity<span>.</span></h1><p>Find the people who see things a little like you. Or a little differently.</p></div><label className="search-field"><Search size={20}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people by name or username" aria-label="Search people"/></label><div className="people-grid">{people.map(u => <div className="person-card" key={u.id}><button onClick={() => openProfile(u.username)}><Avatar user={u} size={54}/><strong>{u.name}</strong><small>@{u.username}</small></button><Button className={u.followed ? 'outline' : 'soft'} onClick={() => toggleFollow(u)}>{u.followed ? 'Following' : 'Follow'}{u.followed ? <Check size={14}/> : <Plus size={14}/>}</Button></div>)}</div>{search && people.length === 0 && <p className="muted">No people found. Try another name.</p>}<div className="section-label"><h2>Fresh from the community</h2><span>Recent moments</span></div></>}
  {page === 'saved' && <div className="page-heading"><div className="eyebrow"><Lock size={14}/> ONLY YOU</div><h1>Your little collection<span>.</span></h1><p>Keep the moments you want to come back to.</p></div>}
  {page === 'post' && <button className="text-button" onClick={() => navigate('home')}><ArrowLeft size={16}/>Back to your space</button>}
+ {page === 'profile' && !profile && <div className="navigation-status" role="status" aria-live="polite">{profilePending ? <><LoaderCircle className="spin" size={24}/><span>Opening profile…</span></> : <><span>Profile could not be loaded.</span><Button className="outline" onClick={() => openProfile(new URLSearchParams(location.search).get('profile') || me.username)}>Try again</Button></>}</div>}
  {page === 'profile' && profile && <><div className="profile-cover"><span>Every perspective has a place.</span><div className="cover-circles"/></div><div className="profile-info"><Avatar user={profile} size={100}/><div className="profile-buttons">{profileOwn ? <Button className="outline" onClick={() => setEdit(true)}><PenLine size={15}/>Edit profile</Button> : <><Button onClick={() => toggleFollow(profile)}>{profile.followed ? 'Following' : 'Follow'}{profile.followed ? <Check size={16}/> : <Plus size={16}/>}</Button><Button className="outline" onClick={() => startChat(profile)}><MessageCircle size={16}/>Message</Button></>}</div><h1>{profile.name}</h1><p className="muted">@{profile.username}</p><p className="bio">{profile.bio || 'A new perspective, a story still unfolding.'}</p>{profile.website && <a href={profile.website} target="_blank" rel="noopener noreferrer" className="profile-link"><LinkIcon size={14}/>{profile.website.replace(/^https?:\/\//, '')}</a>}<div className="profile-stats"><span><b>{profile.posts}</b> moments</span>{['followers', 'following'].map(type => <button key={type} onClick={() => act(async () => { const r = await api('connections/' + profile.id + '?type=' + type); setList({ title: type === 'followers' ? 'Followers' : 'Following', items: r.items }); })}><b>{profile[type]}</b> {type}</button>)}</div></div><div className="feed-tabs">{(profileOwn ? ['posts', 'saved', 'drafts', 'about'] : ['posts', 'about']).map(t => <button key={t} className={profileTab === t ? 'selected' : ''} onClick={() => setProfileTab(t)}>{t === 'posts' ? 'Moments' : t[0].toUpperCase() + t.slice(1)}{['saved', 'drafts'].includes(t) && <Lock size={12}/>}</button>)}</div>{profileTab === 'about' && <div className="card about-card"><h2>A little about {profile.name}</h2><p>{profile.bio || 'No bio added yet.'}</p><p className="muted">Part of Mellunest since {new Date(profile.created).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>{!profileOwn && <Button className="outline danger" onClick={() => { if (confirm('Block @' + profile.username + '? You will no longer see each other’s content or receive messages from each other.'))
             act(async () => { await api('blocks', 'POST', { target: profile.id, active: true }); navigate('home'); tell('Account blocked.'); }); }}>Block account</Button>}</div>}</>}
- {!(page === 'profile' && profileTab === 'about') && <>{loading && items.length === 0 ? <div className="skeleton-card"><div /><div /><div /></div> : items.length === 0 ? <Empty title={visitingOtherProfile ? 'No moments yet.' : profileTab === 'drafts' && page === 'profile' ? 'An idea starts here.' : page === 'saved' ? 'Save a little inspiration.' : page === 'home' && tab === 'following' ? 'Your circle is waiting.' : 'The first moment is yours.'} detail={visitingOtherProfile ? 'This member has not shared any moments yet.' : page === 'saved' ? 'Tap the bookmark on any post to keep it here.' : page === 'home' && tab === 'following' ? 'Discover someone new and follow them to see their moments here.' : 'This space grows with the things you share. A photo, a thought, a little slice of life.'} action={visitingOtherProfile ? undefined : <Button onClick={() => page === 'home' && tab === 'following' ? navigate('explore') : setCompose({ kind: 'post' })}>{page === 'home' && tab === 'following' ? 'Discover people' : 'Share your first moment'}<ArrowRight size={16}/></Button>}/> : <div className={page === 'explore' ? 'explore-posts' : ''}>{items.map(p => <PostCard key={p.id} post={p} me={me} profile={openProfile} comment={() => openComments(p)} share={() => share(p)} edit={() => setCompose({ ...p, kind: 'post' })} remove={() => { if (confirm('Delete this moment and its comments? This cannot be undone.'))
+ {!(page === 'profile' && (!profile || profileTab === 'about')) && <>{loading && items.length === 0 ? <div className="skeleton-card"><div /><div /><div /></div> : items.length === 0 ? <Empty title={visitingOtherProfile ? 'No moments yet.' : profileTab === 'drafts' && page === 'profile' ? 'An idea starts here.' : page === 'saved' ? 'Save a little inspiration.' : page === 'home' && tab === 'following' ? 'Your circle is waiting.' : 'The first moment is yours.'} detail={visitingOtherProfile ? 'This member has not shared any moments yet.' : page === 'saved' ? 'Tap the bookmark on any post to keep it here.' : page === 'home' && tab === 'following' ? 'Discover someone new and follow them to see their moments here.' : 'This space grows with the things you share. A photo, a thought, a little slice of life.'} action={visitingOtherProfile ? undefined : <Button onClick={() => page === 'home' && tab === 'following' ? navigate('explore') : setCompose({ kind: 'post' })}>{page === 'home' && tab === 'following' ? 'Discover people' : 'Share your first moment'}<ArrowRight size={16}/></Button>}/> : <div className={page === 'explore' ? 'explore-posts' : ''}>{items.map(p => <PostCard key={p.id} post={p} me={me} profile={openProfile} comment={() => openComments(p)} share={() => share(p)} edit={() => setCompose({ ...p, kind: 'post' })} remove={() => { if (confirm('Delete this moment and its comments? This cannot be undone.'))
             act(async () => { await api('posts/' + p.id, 'DELETE'); setItems(items.filter(x => x.id !== p.id)); tell('Moment deleted.'); }); }} interact={(type: string) => interactPost(p, type)}/>)}</div>}{next && <Button className="outline load-more" disabled={loading} onClick={() => loadPosts(true)}>{loading ? 'Loading…' : 'A few more moments'}</Button>}</>}
  </section><aside className="right-rail"><div className="welcome-card"><div className="welcome-art"><span>◒</span><span>◓</span><span>✳</span></div><span className="eyebrow">A SPACE TO BE YOURSELF</span><h2>Less perfect.<br />More present.</h2><p>Your everyday has a story.<br />Let someone in on it.</p><button onClick={() => setCompose({ kind: 'post' })}>Share something real <ArrowUpRight size={17}/></button></div><div className="suggestions"><div className="section-label"><h2>Meet your people</h2><button onClick={() => navigate('explore')}>Explore</button></div>{people.slice(0, 4).map(u => <div className="suggestion" key={u.id}><button className="person-link" onClick={() => openProfile(u.username)}><Avatar user={u}/><span><strong>{u.name}</strong><small>@{u.username}</small></span></button><button className={'follow-small ' + (u.followed ? 'following' : '')} aria-label={(u.followed ? 'Unfollow ' : 'Follow ') + u.name} onClick={() => toggleFollow(u)}>{u.followed ? <Check size={17}/> : <Plus size={17}/>}</button></div>)}{!people.length && <p className="muted">A new community starts with you. Your people will appear here as they join.</p>}</div><div className="community-note"><Globe size={20}/><p>Different worlds.<br /><strong>One shared space.</strong></p></div><footer>Made for the moments between.<br /><span>Mellunest © {new Date().getFullYear()}</span></footer></aside></div>}
- {page === 'messages' && <><div className="page-heading"><div className="eyebrow">KEEP THE CONVERSATION GOING</div><h1>A little closer<span>.</span></h1></div><div className="chat-layout"><section className="conversation-list"><header><h2>Conversations</h2><button className="icon-button" aria-label="Start conversation" onClick={() => setList({ title: 'Start a conversation', items: people })}><PenLine size={19}/></button></header><div className="connection"><span className={'status-dot ' + (!connected ? 'offline' : '')}/>{connected ? 'Connected · live updates' : 'Reconnecting…'}</div>{conversations.map(c => <button className={'conversation ' + (current?.conversation_id === c.conversation_id ? 'selected' : '')} key={c.conversation_id} onClick={() => openChat(c)}><Avatar user={c}/><span><strong>{c.name}</strong><small>{c.preview || 'Say your first hello'}</small></span>{c.unread > 0 && <b>{c.unread}</b>}</button>)}{conversations.length === 0 && <Empty title="Start with hello." detail="Find someone in Discover, then tap Message." action={<Button className="soft" onClick={() => navigate('explore')}>Find people</Button>}/>}</section><section className="chat-window">{current ? <><header><button className="person-link" onClick={() => openProfile(current.username)}><Avatar user={current}/><span><strong>{current.name}</strong><small>@{current.username}</small></span></button><ShieldCheck size={19}/></header><div className="chat-history" ref={chatPane} onScroll={() => { const el = chatPane.current; if (el)
-        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button><p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={e => { e.preventDefault(); void sendMessage(); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={sending || !message.trim()} aria-label={sending ? "Sending message" : "Send message"}>{sending ? <LoaderCircle className="spin" size={18}/> : <Send size={18}/>}</Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
+ {page === 'messages' && <><div className="page-heading"><div className="eyebrow">KEEP THE CONVERSATION GOING</div><h1>A little closer<span>.</span></h1></div><div className="chat-layout"><section className="conversation-list"><header><h2>Conversations</h2><button className="icon-button" aria-label="Start conversation" onClick={() => setList({ title: 'Start a conversation', items: people })}><PenLine size={19}/></button></header><div className="connection"><span className={'status-dot ' + (!connected ? 'offline' : '')}/>{connected ? 'Connected · live updates' : 'Reconnecting…'}</div>{conversations.map(c => <button className={'conversation ' + (current?.conversation_id === c.conversation_id ? 'selected' : '')} key={c.conversation_id} onClick={() => openChat(c)}><Avatar user={c}/><span><strong>{c.name}</strong><small>{c.preview || 'Say your first hello'}</small></span>{c.unread > 0 && <b>{c.unread}</b>}</button>)}{conversations.length === 0 && <Empty title="Start with hello." detail="Find someone in Discover, then tap Message." action={<Button className="soft" onClick={() => navigate('explore')}>Find people</Button>}/>}</section><section className="chat-window">{chatLoading && !current ? <div className="navigation-status" role="status"><LoaderCircle className="spin" size={24}/><span>Opening conversation…</span></div> : current ? <><header><button className="person-link" onClick={() => openProfile(current.username)}><Avatar user={current}/><span><strong>{current.name}</strong><small>@{current.username}</small></span></button><ShieldCheck size={19}/></header><div className="chat-history" ref={chatPane} onScroll={() => { const el = chatPane.current; if (el)
+        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" disabled={chatLoading} onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button>{chatLoading && <div className="navigation-status compact" role="status"><LoaderCircle className="spin" size={20}/><span>Loading messages…</span></div>}<p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={e => { e.preventDefault(); void sendMessage(); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={sending || !message.trim()} aria-label={sending ? "Sending message" : "Send message"}>{sending ? <LoaderCircle className="spin" size={18}/> : <Send size={18}/>}</Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
  {page === 'notifications' && <section className="activity-page"><div className="page-heading"><div className="eyebrow">THE LITTLE CONNECTIONS</div><h1>Your ripple effect<span>.</span></h1><p>A little love from around your world.</p></div><div className="section-label"><h2>Recent activity</h2><button onClick={() => act(async () => { await api('notifications', 'POST', {}); await refreshAux(); })}>Mark all as read</button></div>{notifications.length ? notifications.map(n => <button key={n.id} className={'notification card ' + (!n.read ? 'unread' : '')} onClick={() => { if (n.kind === 'follow')
         openProfile(n.username);
     else if (n.kind === 'message') {
@@ -257,7 +340,8 @@ export default function App() {
     } }}><Avatar user={n}/><span><strong>{n.name}</strong> {n.kind === 'like' ? 'liked your moment.' : n.kind === 'comment' ? 'left a comment on your moment.' : n.kind === 'follow' ? 'is now following you.' : 'sent you a message.'}<small>{ago(n.created)}</small></span>{!n.read && <i className="status-dot"/>}</button>) : <Empty title="Good things will find you." detail="Likes, comments, new followers and messages will appear here."/>}</section>}
  {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => { const confirmName = prompt('Permanently delete your account, all posts and conversations? Type your username to confirm.'); if (confirmName)
         act(async () => { await api('users', 'DELETE', { confirm: confirmName }); location.replace('/?auth=login'); }); }}><Trash2 size={16}/>Delete account</Button></div></section>}
- </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home'], [Compass, 'explore'], [Plus, 'create'], [MessageCircle, 'messages'], [Users, 'profile']].map(([Icon, v]: any) => <button key={v} className={page === v ? 'selected' : ''} aria-label={v} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : navigate(v)}><Icon size={22}/></button>)}</nav></div>
+ </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home', 'Home'], [Compass, 'explore', 'Discover'], [Plus, 'create', 'Create'], [MessageCircle, 'messages', 'Chats'], [Users, 'profile', 'Profile'], [MoreHorizontal, 'more', 'More']].map(([Icon, v, label]: any) => <button key={v} className={(page === v || (v === 'more' && ['saved', 'notifications', 'settings'].includes(page))) ? 'selected' : ''} aria-label={label} aria-current={page === v ? 'page' : undefined} aria-haspopup={v === 'more' ? 'dialog' : undefined} aria-expanded={v === 'more' ? mobileMenu : undefined} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : v === 'more' ? setMobileMenu(true) : navigate(v)}><Icon size={21}/><span>{label}</span></button>)}</nav></div>
+ {mobileMenu && <Modal title="Your Mellunest" close={() => setMobileMenu(false)}><div className="mobile-menu-options">{[[Bookmark, 'saved', 'Saved moments'], [Bell, 'notifications', 'Activity'], [Settings, 'settings', 'Settings']].map(([Icon, target, label]: any) => <button key={target} onClick={() => navigate(target)}><Icon size={21}/><span>{label}</span><ArrowRight size={17}/></button>)}<button onClick={() => { setMobileMenu(false); void logout(); }}><LogOut size={21}/><span>Log out</span></button></div></Modal>}
  {passwordOpen && <Modal title="Reset password" close={() => { if (!passwordLock.current) { setPasswordOpen(false); setPasswordError(''); } }}><form style={{ padding: 24 }} onSubmit={async e => {
     e.preventDefault();
     if (passwordLock.current) return;
