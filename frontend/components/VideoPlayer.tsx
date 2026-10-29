@@ -17,7 +17,9 @@ export function VideoPlayer({ src }: { src: string }) {
     const [duration, setDuration] = useState(0);
     const [buffered, setBuffered] = useState(0);
     const [volume, setVolume] = useState(1);
-    const [muted, setMuted] = useState(false);
+    const [muted, setMuted] = useState(true);
+    const visible = useRef(false);
+    const manualPause = useRef(false);
     const [rate, setRate] = useState(1);
     const [fullscreen, setFullscreen] = useState(false);
     const [error, setError] = useState('');
@@ -39,10 +41,57 @@ export function VideoPlayer({ src }: { src: string }) {
         };
     }, []);
 
+    useEffect(() => {
+        const v = video.current;
+        if (!v || !('IntersectionObserver' in window)) return;
+        let disposed = false;
+        let pending = false;
+        v.muted = true;
+        setMuted(true);
+        const autoPlay = () => {
+            if (disposed || pending || !visible.current || document.hidden || manualPause.current || !v.paused || v.ended) return;
+            // Every automatic start is silent, even after a previous manual unmute.
+            v.muted = true;
+            pending = true;
+            void v.play().then(() => {
+                if (disposed || !visible.current || document.hidden || manualPause.current) v.pause();
+            }).catch(() => {
+                // Low-power/browser policies can reject autoplay; the play button still works.
+                if (!disposed) setWaiting(false);
+            }).finally(() => { pending = false; });
+        };
+        const observer = new IntersectionObserver(([entry]) => {
+            if (!entry) return;
+            if (!entry.isIntersecting || entry.intersectionRatio < 0.1) {
+                visible.current = false;
+                manualPause.current = false;
+                v.pause();
+            } else if (entry.intersectionRatio >= 0.5) {
+                const entering = !visible.current;
+                visible.current = true;
+                if (entering) autoPlay();
+            }
+        }, { threshold: [0, 0.1, 0.5] });
+        observer.observe(v);
+        const visibilityChanged = () => {
+            if (document.hidden) v.pause();
+            else autoPlay();
+        };
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            disposed = true;
+            visible.current = false;
+            observer.disconnect();
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            v.pause();
+        };
+    }, [src]);
+
     const togglePlay = async () => {
         const v = video.current;
         if (!v) return;
-        if (!v.paused) { v.pause(); return; }
+        if (!v.paused) { manualPause.current = true; v.pause(); return; }
+        manualPause.current = false;
         setError('');
         setWaiting(true);
         if (v.error) v.load();
@@ -83,7 +132,7 @@ export function VideoPlayer({ src }: { src: string }) {
             else if (e.key.toLowerCase() === 'f') { e.preventDefault(); void toggleFullscreen(); }
         }}>
         <div className="mn-player-stage">
-            <video ref={video} src={src} playsInline preload="none"
+            <video ref={video} src={src} muted={muted} playsInline preload="none"
                 onClick={() => void togglePlay()}
                 onLoadedMetadata={metadata} onDurationChange={metadata}
                 onTimeUpdate={() => setPosition(video.current?.currentTime || 0)}
