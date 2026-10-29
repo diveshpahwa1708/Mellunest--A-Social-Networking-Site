@@ -236,30 +236,37 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                 return json({ id, mime }, 201);
             }
             if (method === 'GET' && p[1]) {
-                const m = await one('SELECT * FROM media WHERE id=?', p[1]);
-                if (!m)
-                    fail(404, 'Media not found.');
-                if (await blocked(u.id, m.user_id))
-                    fail(404, 'Media not found.');
-                if (m.kind === 'story') {
-                    const s = await one('SELECT * FROM stories WHERE media_id=?', m.id);
-                    if (s && s.expires <= now())
-                        fail(404, 'This story has expired.');
-                    if (!s && m.user_id !== u.id)
-                        fail(404, 'Media not found.');
-                }
-                else if (m.kind === 'post') {
-                    if (m.post_id)
-                        await canPost(m.post_id, u);
-                    else if (m.user_id !== u.id)
-                        fail(404, 'Media not found.');
-                }
-                else if (m.user_id !== u.id && !await one('SELECT 1 FROM users WHERE avatar=?', m.id))
-                    fail(404, 'Media not found.');
+                // One authorization query; never serve cached bytes before these checks.
+                const m = await one(`SELECT m.*, p.status post_status FROM media m
+                    LEFT JOIN posts p ON p.id=m.post_id
+                    LEFT JOIN stories s ON s.media_id=m.id
+                    WHERE m.id=? AND NOT EXISTS(
+                        SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id)
+                        OR (b.target=? AND b.user_id=m.user_id))
+                    AND (
+                        (m.kind='post' AND ((m.post_id IS NULL AND m.user_id=?)
+                            OR (p.id IS NOT NULL AND (p.status='published' OR p.user_id=?))))
+                        OR (m.kind='story' AND ((s.id IS NOT NULL AND s.expires>?)
+                            OR (s.id IS NULL AND m.user_id=?)))
+                        OR (m.kind='avatar' AND (m.user_id=? OR EXISTS(SELECT 1 FROM users WHERE avatar=m.id)))
+                    )`, p[1], u.id, u.id, u.id, u.id, now(), u.id, u.id);
+                if (!m) fail(404, 'Media not found.');
+                const cacheable = m.kind === 'avatar' || (m.kind === 'post' && m.post_status === 'published');
+                const etag = '"' + m.id + '-' + m.size + '-' + m.created + '"';
+                const headers = new Headers({
+                    'Content-Type': m.mime,
+                    'Cache-Control': cacheable ? 'private, no-cache' : 'private, no-store',
+                    'Vary': 'Cookie',
+                    'X-Content-Type-Options': 'nosniff',
+                    'Accept-Ranges': 'bytes'
+                });
+                if (cacheable) headers.set('ETag', etag);
+                if (cacheable && !req.headers.has('range') &&
+                    req.headers.get('if-none-match')?.split(',').some(value => value.trim().replace(/^W\//, '') === etag))
+                    return new Response(null, { status: 304, headers });
                 const obj = await env.BUCKET.get(m.id, { range: req.headers });
                 if (!obj)
                     fail(404, 'Media not found.');
-                const headers = new Headers({ 'Content-Type': m.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' });
                 if (req.headers.has('range') && obj.range && 'offset' in obj.range) {
                     headers.set('Content-Range', `bytes ${obj.range.offset}-${(obj.range.offset || 0) + (obj.range.length || obj.size) - 1}/${obj.size}`);
                     headers.set('Content-Length', String(obj.range.length));

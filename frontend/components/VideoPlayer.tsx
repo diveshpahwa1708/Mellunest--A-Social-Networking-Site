@@ -44,6 +44,7 @@ export function VideoPlayer({ src }: { src: string }) {
         if (!v) return;
         if (!v.paused) { v.pause(); return; }
         setError('');
+        setWaiting(true);
         if (v.error) v.load();
         if (v.ended) v.currentTime = 0;
         try { await v.play(); }
@@ -82,7 +83,7 @@ export function VideoPlayer({ src }: { src: string }) {
             else if (e.key.toLowerCase() === 'f') { e.preventDefault(); void toggleFullscreen(); }
         }}>
         <div className="mn-player-stage">
-            <video ref={video} src={src} playsInline preload="metadata"
+            <video ref={video} src={src} playsInline preload="none"
                 onClick={() => void togglePlay()}
                 onLoadedMetadata={metadata} onDurationChange={metadata}
                 onTimeUpdate={() => setPosition(video.current?.currentTime || 0)}
@@ -117,7 +118,7 @@ export function VideoPlayer({ src }: { src: string }) {
                 <button type="button" className="mn-player-action mn-player-play" aria-label={playing ? 'Pause video' : ended ? 'Replay video' : 'Play video'} onClick={() => void togglePlay()}>
                     {playing ? <Pause size={18} fill="currentColor"/> : <Play size={18} fill="currentColor"/>}
                 </button>
-                <span className="mn-player-time">{timeLabel(position)} <span>/ {timeLabel(duration)}</span></span>
+                <span className="mn-player-time">{timeLabel(position)} <span>/ {duration ? timeLabel(duration) : '–:––'}</span></span>
                 <div className="mn-player-volume">
                     <button type="button" className="mn-player-action" aria-label={muted || volume === 0 ? 'Unmute video' : 'Mute video'} onClick={toggleMute}>
                         {muted || volume === 0 ? <VolumeX size={19}/> : <Volume2 size={19}/>}

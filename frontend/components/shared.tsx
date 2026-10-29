@@ -7,7 +7,7 @@ export function Logo() { return <span className="logo"><svg viewBox="0 0 64 64" 
 export function Avatar({ user, size = 42 }: {
     user?: Item;
     size?: number;
-}) { return <span className="avatar" style={{ width: size, height: size, fontSize: size * .35 }}>{user?.avatar ? <img src={media(user.avatar)} alt=""/> : (user?.name || user?.username || 'V').slice(0, 1).toUpperCase()}</span>; }
+}) { return <span className="avatar" style={{ width: size, height: size, fontSize: size * .35 }}>{user?.avatar ? <img src={media(user.avatar)} alt="" loading="lazy" decoding="async" width={size} height={size}/> : (user?.name || user?.username || 'V').slice(0, 1).toUpperCase()}</span>; }
 export function Button({ children, onClick, className = '', ...props }: any) { return <button type="button" className={'button ' + className} onClick={onClick} {...props}>{children}</button>; }
 export function Empty({ title, detail, action }: {
     title: string;
@@ -44,7 +44,29 @@ export function Modal({ title, children, close, wide = false }: {
         <header><h2>{title}</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={close}><X /></button></header>{children}
     </dialog>;
 }
-export function MediaView({ item, controls = true }: {
+const imagePlaceholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="640" height="480"%3E%3Crect width="100%25" height="100%25" fill="%23edf1e7"/%3E%3C/svg%3E';
+function FeedImage({ src, priority }: { src: string; priority: boolean }) {
+    const ref = useRef<HTMLImageElement>(null);
+    const [ready, setReady] = useState(priority);
+    useEffect(() => {
+        if (ready) return;
+        if (!('IntersectionObserver' in window)) { setReady(true); return; }
+        const observer = new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) { setReady(true); observer.disconnect(); }
+        }, { rootMargin: '300px' });
+        if (ref.current) observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, [ready]);
+    return <img ref={ref} src={ready ? src : imagePlaceholder} alt="Shared moment"
+        loading={priority ? 'eager' : 'lazy'} decoding="async" fetchPriority={priority ? 'high' : 'auto'}/>;
+}
+export function MediaView({ item, controls = true, priority = false }: {
     item: Item;
     controls?: boolean;
-}) { return item.mime?.startsWith('video') ? (controls ? <VideoPlayer key={item.id || item.media_id} src={media(item.id || item.media_id)}/> : <video src={media(item.id || item.media_id)} playsInline preload="metadata"/>) : <img src={media(item.id || item.media_id)} alt="Shared moment" loading="lazy"/>; }
+    priority?: boolean;
+}) {
+    const id = item.id || item.media_id;
+    return item.mime?.startsWith('video')
+        ? (controls ? <VideoPlayer key={id} src={media(id)}/> : <video src={media(id)} playsInline preload="none"/>)
+        : <FeedImage key={id} src={media(id)} priority={priority}/>;
+}
