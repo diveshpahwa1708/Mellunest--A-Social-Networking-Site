@@ -49,7 +49,7 @@ export function VideoPlayer({ src }: { src: string }) {
         v.muted = true;
         setMuted(true);
         const autoPlay = () => {
-            if (disposed || pending || !visible.current || document.hidden || manualPause.current || !v.paused || v.ended) return;
+            if (disposed || pending || !visible.current || document.hidden || manualPause.current || !v.paused || (v.ended && v.currentTime > 0)) return;
             // Every automatic start is silent, even after a previous manual unmute.
             v.muted = true;
             pending = true;
@@ -69,7 +69,13 @@ export function VideoPlayer({ src }: { src: string }) {
             } else if (entry.intersectionRatio >= 0.5) {
                 const entering = !visible.current;
                 visible.current = true;
-                if (entering) autoPlay();
+                if (entering) {
+                    // A new viewport visit starts a fresh replay, including ended videos.
+                    v.currentTime = 0;
+                    setPosition(0);
+                    setEnded(false);
+                    autoPlay();
+                }
             }
         }, { threshold: [0, 0.1, 0.5] });
         observer.observe(v);
