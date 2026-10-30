@@ -9,7 +9,7 @@ import {PostCard} from './PostCard';
 import {Composer} from './Composer';
 import {ProfileEditor} from './ProfileEditor';
 export default function App() {
-    const [auth, setAuth] = useState<Item | null>(null), [boot, setBoot] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [page, setPage] = useState('home'), [tab, setTab] = useState('discover'), [items, setItems] = useState<Item[]>([]), [next, setNext] = useState<number | null>(null), [people, setPeople] = useState<Item[]>([]), [stories, setStories] = useState<Item[]>([]), [loading, setLoading] = useState(false), [search, setSearch] = useState(''), [profile, setProfile] = useState<Item | null>(null), [profileTab, setProfileTab] = useState('posts'), [notifications, setNotifications] = useState<Item[]>([]), [conversations, setConversations] = useState<Item[]>([]), [current, setCurrent] = useState<Item | null>(null), [messages, setMessages] = useState<Item[]>([]), [message, setMessage] = useState(''), [sending, setSending] = useState(false), [connected, setConnected] = useState(false), [compose, setCompose] = useState<Item | null>(null), [storyIndex, setStoryIndex] = useState<number | null>(null), [comments, setComments] = useState<Item | null>(null), [commentItems, setCommentItems] = useState<Item[]>([]), [comment, setComment] = useState(''), [edit, setEdit] = useState(false), [list, setList] = useState<{
+    const [auth, setAuth] = useState<Item | null>(null), [boot, setBoot] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [page, setPage] = useState('home'), [tab, setTab] = useState('discover'), [items, setItems] = useState<Item[]>([]), [next, setNext] = useState<number | null>(null), [people, setPeople] = useState<Item[]>([]), [stories, setStories] = useState<Item[]>([]), [loading, setLoading] = useState(false), [search, setSearch] = useState(''), [profile, setProfile] = useState<Item | null>(null), [profileTab, setProfileTab] = useState('posts'), [notifications, setNotifications] = useState<Item[]>([]), [conversations, setConversations] = useState<Item[]>([]), [current, setCurrent] = useState<Item | null>(null), [messages, setMessages] = useState<Item[]>([]), [message, setMessage] = useState(''), [sending, setSending] = useState(false), [connected, setConnected] = useState(false), [compose, setCompose] = useState<Item | null>(null), [storyIndex, setStoryIndex] = useState<number | null>(null), [comments, setComments] = useState<Item | null>(null), [edit, setEdit] = useState(false), [list, setList] = useState<{
         title: string;
         items: Item[];
     } | null>(null), [dark, setDark] = useState(false), [authMode, setAuthMode] = useState('login'), [token, setToken] = useState('');
@@ -271,7 +271,7 @@ export default function App() {
         await navigator.clipboard.writeText(url);
         tell('Post link copied.');
     } });
-    const openComments = async (p: Item) => act(async () => { setComments(p); const r = await api('comments/' + p.id); setCommentItems(r.items); });
+    const openComments = (p: Item) => setComments(p);
     const sendMessage = async () => {
         const conversationId = currentRef.current?.conversation_id;
         const body = message.trim();
@@ -377,7 +377,7 @@ export default function App() {
  {compose && <Composer user={me} value={compose} close={() => setCompose(null)} saved={async (status: string) => { const createdPost = compose.kind === 'post' && !compose.id; setCompose(null); if (createdPost) { await openProfile(me.username); if (status === 'draft') setProfileTab('drafts'); } else { await loadPosts(); } await refreshAux(); tell(compose.kind === 'story' ? 'Your story is live for 24 hours.' : 'Your moment has been saved to your account.'); }}/>}
  {edit && <ProfileEditor user={me} close={() => setEdit(false)} saved={async (username: string) => { setEdit(false); await bootAuth(); if (profile)
         await openProfile(username); tell('Profile updated.'); }}/>}
- {comments && <Modal title="A little conversation" close={() => setComments(null)}><div className="comment-list">{commentItems.map(c => <div className="comment" key={c.id}><Avatar user={c} size={32}/><div><button className="text-button" onClick={() => { setComments(null); openProfile(c.username); }}><b>{c.name}</b></button><p>{c.body}</p><small>{ago(c.created)}</small></div>{(c.user_id === me.id || comments.user_id === me.id) && <button className="icon-button" aria-label="Delete comment" onClick={() => act(async () => { await api('comments/' + comments.id + '/' + c.id, 'DELETE'); setCommentItems(commentItems.filter(x => x.id !== c.id)); })}><Trash2 size={15}/></button>}</div>)}{!commentItems.length && <p className="muted">Be the first to leave a kind word.</p>}{commentItems.length >= 40 && <button className="text-button" onClick={() => act(async () => { const r = await api('comments/' + comments.id + '?before=' + commentItems[commentItems.length - 1].created); setCommentItems([...commentItems, ...r.items]); })}>Load earlier comments</button>}</div><form className="comment-form" onSubmit={e => { e.preventDefault(); act(async () => { await api('comments/' + comments.id, 'POST', { body: comment }); setComment(''); const r = await api('comments/' + comments.id); setCommentItems(r.items); await loadPosts(); }); }}><input aria-label="Comment" placeholder="Add a kind word…" maxLength={1000} value={comment} onChange={e => setComment(e.target.value)} required/><Button type="submit" aria-label="Post comment"><Send size={17}/></Button></form></Modal>}
+ {comments && <CommentsDialog key={comments.id} post={comments} me={me} close={() => setComments(null)} profile={name => { setComments(null); void openProfile(name); }} changed={() => void loadPosts()}/>}
  {storyIndex !== null && stories[storyIndex] && <Modal title={'A moment with ' + stories[storyIndex].name} close={() => setStoryIndex(null)}><div className="story-view"><div className="story-progress" key={stories[storyIndex].id}><i style={{ animationDuration: stories[storyIndex].mime.startsWith('video') ? '30s' : '7s' }}/></div><MediaView item={{ ...stories[storyIndex], id: stories[storyIndex].media_id }}/><button className="story-prev" aria-label="Previous story" onClick={() => setStoryIndex(Math.max(0, storyIndex - 1))}><ChevronLeft /></button><button className="story-next" aria-label="Next story" onClick={() => setStoryIndex(storyIndex + 1 < stories.length ? storyIndex + 1 : null)}><ChevronRight /></button></div><div className="story-meta"><small>{ago(stories[storyIndex].created)} · Expires {new Date(stories[storyIndex].expires).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</small>{stories[storyIndex].user_id === me.id && <><span><Eye size={14}/>{stories[storyIndex].view_count}</span><button className="icon-button" aria-label="Delete story" onClick={() => { if (confirm('Delete this story?'))
         act(async () => { await api('stories/' + stories[storyIndex].id, 'DELETE'); setStoryIndex(null); await refreshAux(); }); }}><Trash2 size={17}/></button></>}</div></Modal>}
  {list && <Modal title={list.title} close={() => setList(null)}><div className="user-list">{list.items.map(u => <div className="suggestion" key={u.id}><button className="person-link" onClick={() => { if (list.title === 'Start a conversation')
@@ -385,4 +385,76 @@ export default function App() {
     else
         openProfile(u.username); setList(null); }}><Avatar user={u}/><span><strong>{u.name}</strong><small>@{u.username}</small></span></button>{list.title === 'Blocked accounts' && <Button className="outline" onClick={() => act(async () => { await api('blocks', 'POST', { target: u.id, active: false }); setList({ ...list, items: list.items.filter(x => x.id !== u.id) }); })}>Unblock</Button>}</div>)}{!list.items.length && <p className="muted">No accounts here yet.</p>}</div></Modal>}
  </div>;
+}
+
+
+// Keep each post's comments, draft and requests inside its own mounted dialog.
+function CommentsDialog({ post, me, close, profile, changed }: {
+    post: Item; me: Item; close: () => void; profile: (name: string) => void; changed: () => void;
+}) {
+    const [items, setItems] = useState<Item[]>([]);
+    const [draft, setDraft] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const [retry, setRetry] = useState(0);
+    const active = useRef(false);
+    const lock = useRef(false);
+    useEffect(() => {
+        active.current = true;
+        let cancelled = false;
+        setLoading(true);
+        setError('');
+        api('comments/' + post.id).then(r => {
+            if (!cancelled) setItems(r.items);
+        }).catch(e => {
+            if (!cancelled) setError(e.message);
+        }).finally(() => {
+            if (!cancelled) setLoading(false);
+        });
+        return () => { cancelled = true; active.current = false; };
+    }, [post.id, retry]);
+    const run = async (task: () => Promise<void>) => {
+        if (lock.current || loading) return;
+        lock.current = true;
+        setBusy(true);
+        setError('');
+        try { await task(); }
+        catch (e: any) { if (active.current) setError(e.message); }
+        finally {
+            lock.current = false;
+            if (active.current) setBusy(false);
+        }
+    };
+    return <Modal title="A little conversation" close={close}>
+        <div className="comment-list" aria-busy={loading}>
+            {loading ? <p className="muted" role="status">Loading comments…</p> : <>
+                {items.map(c => <div className="comment" key={c.id}>
+                    <Avatar user={c} size={32}/>
+                    <div><button className="text-button" onClick={() => profile(c.username)}><b>{c.name}</b></button><p>{c.body}</p><small>{ago(c.created)}</small></div>
+                    {(c.user_id === me.id || post.user_id === me.id) && <button className="icon-button" aria-label="Delete comment" disabled={busy} onClick={() => void run(async () => {
+                        await api('comments/' + post.id + '/' + c.id, 'DELETE');
+                        if (active.current) { setItems(previous => previous.filter(x => x.id !== c.id)); changed(); }
+                    })}><Trash2 size={15}/></button>}
+                </div>)}
+                {!items.length && !error && <p className="muted">Be the first to leave a kind word.</p>}
+                {items.length >= 40 && <button className="text-button" disabled={busy} onClick={() => void run(async () => {
+                    const r = await api('comments/' + post.id + '?before=' + items[items.length - 1].created);
+                    if (active.current) setItems(previous => [...previous, ...r.items.filter((c: Item) => !previous.some(x => x.id === c.id))]);
+                })}>Load earlier comments</button>}
+            </>}
+            {error && <div role="alert"><p>{error}</p><button className="text-button" disabled={busy || loading} onClick={() => setRetry(value => value + 1)}>Retry loading comments</button></div>}
+        </div>
+        <form className="comment-form" onSubmit={e => { e.preventDefault(); void run(async () => {
+            await api('comments/' + post.id, 'POST', { body: draft });
+            if (!active.current) return;
+            setDraft('');
+            changed();
+            const r = await api('comments/' + post.id);
+            if (active.current) setItems(r.items);
+        }); }}>
+            <input aria-label="Comment" placeholder="Add a kind word…" maxLength={1000} value={draft} onChange={e => setDraft(e.target.value)} disabled={loading || busy} required/>
+            <Button type="submit" aria-label="Post comment" disabled={loading || busy}><Send size={17}/></Button>
+        </form>
+    </Modal>;
 }
