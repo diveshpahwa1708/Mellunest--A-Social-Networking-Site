@@ -428,7 +428,7 @@ function CommentsDialog({ post, me, close, profile, changed }: {
     };
     return <Modal title="A little conversation" close={close}>
         <div className="comment-list" aria-busy={loading}>
-            {loading ? <p className="muted" role="status">Loading comments…</p> : <>
+            {loading ? <div className="navigation-status compact" role="status" aria-live="polite"><LoaderCircle className="spin" size={24} aria-hidden="true"/><span>Loading comments…</span></div> : <>
                 {items.map(c => <div className="comment" key={c.id}>
                     <Avatar user={c} size={32}/>
                     <div><button className="text-button" onClick={() => profile(c.username)}><b>{c.name}</b></button><p>{c.body}</p><small>{ago(c.created)}</small></div>
