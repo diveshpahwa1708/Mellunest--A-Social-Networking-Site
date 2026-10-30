@@ -531,8 +531,8 @@ function StoryPreview({ src, video }: { src: string; video: boolean }) {
         };
     }, [src, video]);
     if (!video) return <img src={src} alt="" loading="lazy" decoding="async"/>;
-    return <span ref={container} style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'var(--soft)', color: 'var(--brand)' }}>
-        {poster ? <img src={poster} alt="Video story preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/> :
+    return <span ref={container} style={{ display: 'grid', placeItems: 'center', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 11, background: 'var(--soft)', color: 'var(--brand)' }}>
+        {poster ? <img src={poster} alt="Video story preview" style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'cover' }}/> :
             failed ? <Film size={28} aria-label="Video story"/> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
     </span>;
 }
