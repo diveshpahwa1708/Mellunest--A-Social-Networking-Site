@@ -182,3 +182,16 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
     .composer-footer{flex-wrap:wrap}
     .modal{max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 }
+
+/* Comment actions stay readable and easy to tap on phones. */
+.comment .comment-content{min-width:0}
+.comment .comment-options{flex:0 0 auto;position:relative;align-self:flex-start}
+.comment-options>.icon-button{min-width:44px;min-height:44px}
+.comment-like{display:flex;align-items:center;gap:6px;min-height:44px;padding:6px 0;color:var(--muted);font-size:12px;font-weight:600}
+.comment-like.liked{color:var(--coral)}
+.comment-dropdown{position:absolute;right:0;top:42px;z-index:5;min-width:130px;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #203b3520}
+.comment-dropdown button{display:flex;align-items:center;gap:9px;min-height:44px;width:100%;padding:9px 12px;text-align:left;border-radius:8px}
+.comment-dropdown button:hover,.comment-dropdown button:focus-visible{background:var(--soft)}
+.comment-edit{display:grid;gap:8px;margin:8px 0}
+.comment-edit textarea{min-height:80px;font-size:16px}
+.comment-edit>div{display:flex;gap:8px}

@@ -368,22 +368,42 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
         }
         if (p[0] === 'comments') {
             const post = await canPost(p[1], u);
-            if (method === 'GET')
-                return json({ items: await all('SELECT c.*,u.username,u.name,u.avatar FROM comments c JOIN users u ON u.id=c.user_id WHERE c.post_id=? AND c.created<? ORDER BY c.created DESC LIMIT 40', post.id, Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER) });
+            if (method === 'GET' && !p[2])
+                return json({ items: await all('SELECT c.*,u.username,u.name,u.avatar,(SELECT count(*) FROM comment_likes l WHERE l.comment_id=c.id) likes,EXISTS(SELECT 1 FROM comment_likes l WHERE l.comment_id=c.id AND l.user_id=?) liked FROM comments c JOIN users u ON u.id=c.user_id WHERE c.post_id=? AND c.created<? ORDER BY c.created DESC LIMIT 40', u.id, post.id, Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER) });
+            if (p[2]) {
+                const comment = await one('SELECT * FROM comments WHERE id=? AND post_id=?', p[2], post.id);
+                if (!comment) fail(404, 'Comment not found.');
+                if (p[3] === 'like' && method === 'POST') {
+                    if (post.status !== 'published') fail(400, 'This post is not published.');
+                    if (await blocked(u.id, comment.user_id)) fail(403, 'Cannot like this comment.');
+                    const b: any = await req.json();
+                    if (typeof b.active !== 'boolean') fail(400, 'Choose whether to like this comment.');
+                    if (b.active) await run('INSERT OR IGNORE INTO comment_likes(user_id,comment_id) VALUES(?,?)', u.id, comment.id);
+                    else await run('DELETE FROM comment_likes WHERE user_id=? AND comment_id=?', u.id, comment.id);
+                    return json(await one('SELECT (SELECT count(*) FROM comment_likes WHERE comment_id=?) likes,EXISTS(SELECT 1 FROM comment_likes WHERE comment_id=? AND user_id=?) liked', comment.id, comment.id, u.id));
+                }
+                if (!p[3] && (method === 'PATCH' || method === 'DELETE')) {
+                    if (comment.user_id !== u.id) fail(403, 'You can only change your own comments.');
+                    if (method === 'DELETE') {
+                        await run('DELETE FROM comments WHERE id=? AND user_id=?', comment.id, u.id);
+                    } else {
+                        const b: any = await req.json(), body = str(b.body, 1000);
+                        if (!body) fail(400, 'Write a comment first.');
+                        await run('UPDATE comments SET body=? WHERE id=? AND user_id=?', body, comment.id, u.id);
+                        return json({ ok: true, body });
+                    }
+                    return json({ ok: true });
+                }
+                fail(405, 'Method not allowed.');
+            }
             if (method === 'POST') {
                 const b: any = await req.json(), body = str(b.body, 1000);
-                if (!body)
-                    fail(400, 'Write a comment first.');
-                if (post.status !== 'published')
-                    fail(400, 'This post is not published.');
+                if (!body) fail(400, 'Write a comment first.');
+                if (post.status !== 'published') fail(400, 'This post is not published.');
                 const id = uid();
                 await run('INSERT INTO comments(id,user_id,post_id,body,created) VALUES(?,?,?,?,?)', id, u.id, post.id, body, now());
                 await notify(post.user_id, u.id, 'comment', post.id, id);
                 return json({ id }, 201);
-            }
-            if (method === 'DELETE' && p[2]) {
-                await run('DELETE FROM comments WHERE id=? AND post_id=? AND (user_id=? OR ?=?)', p[2], post.id, u.id, post.user_id, u.id);
-                return json({ ok: true });
             }
         }
         if (p[0] === 'users') {

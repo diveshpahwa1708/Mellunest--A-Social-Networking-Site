@@ -398,6 +398,19 @@ function CommentsDialog({ post, me, close, profile, changed }: {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [retry, setRetry] = useState(0);
+    const [menu, setMenu] = useState<string | null>(null);
+    const [editing, setEditing] = useState<string | null>(null);
+    const [editBody, setEditBody] = useState('');
+    const menuRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!menu) return;
+        const outside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(null); };
+        const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMenu(null); } };
+        document.addEventListener('pointerdown', outside);
+        document.addEventListener('keydown', escape, true);
+        return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape, true); };
+    }, [menu]);
+
     const active = useRef(false);
     const lock = useRef(false);
     useEffect(() => {
@@ -431,11 +444,45 @@ function CommentsDialog({ post, me, close, profile, changed }: {
             {loading ? <div className="navigation-status compact" role="status" aria-live="polite"><LoaderCircle className="spin" size={24} aria-hidden="true"/><span>Loading comments…</span></div> : <>
                 {items.map(c => <div className="comment" key={c.id}>
                     <Avatar user={c} size={32}/>
-                    <div><button className="text-button" onClick={() => profile(c.username)}><b>{c.name}</b></button><p>{c.body}</p><small>{ago(c.created)}</small></div>
-                    {(c.user_id === me.id || post.user_id === me.id) && <button className="icon-button" aria-label="Delete comment" disabled={busy} onClick={() => void run(async () => {
-                        await api('comments/' + post.id + '/' + c.id, 'DELETE');
-                        if (active.current) { setItems(previous => previous.filter(x => x.id !== c.id)); changed(); }
-                    })}><Trash2 size={15}/></button>}
+                    <div className="comment-content">
+                        <button className="text-button" onClick={() => profile(c.username)}><b>{c.name}</b></button>
+                        {editing === c.id ? <form className="comment-edit" onSubmit={e => {
+                            e.preventDefault();
+                            void run(async () => {
+                                const r = await api('comments/' + post.id + '/' + c.id, 'PATCH', { body: editBody });
+                                if (active.current) { setItems(previous => previous.map(x => x.id === c.id ? { ...x, body: r.body } : x)); setEditing(null); }
+                            });
+                        }}>
+                            <textarea aria-label="Edit comment" value={editBody} onChange={e => setEditBody(e.target.value)} maxLength={1000} required disabled={busy} autoFocus/>
+                            <div><Button type="submit" disabled={busy || !editBody.trim()}>Save</Button><Button className="outline" disabled={busy} onClick={() => setEditing(null)}>Cancel</Button></div>
+                        </form> : <p>{c.body}</p>}
+                        <small>{ago(c.created)}</small>
+                        <button type="button" className={'comment-like' + (c.liked ? ' liked' : '')} aria-label={c.liked ? 'Unlike comment' : 'Like comment'} aria-pressed={!!c.liked} disabled={busy} onClick={() => void run(async () => {
+                            const liked = !c.liked;
+                            setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked, likes: Math.max(0, Number(x.likes || 0) + (liked ? 1 : -1)) } : x));
+                            try {
+                                const r = await api('comments/' + post.id + '/' + c.id + '/like', 'POST', { active: liked });
+                                if (active.current) setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked: !!r.liked, likes: r.likes } : x));
+                            } catch (e) {
+                                if (active.current) setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked: c.liked, likes: c.likes } : x));
+                                throw e;
+                            }
+                        })}><Heart size={15} fill={c.liked ? 'currentColor' : 'none'}/><span>{c.liked ? 'Liked' : 'Like'} · {c.likes || 0}</span></button>
+                    </div>
+                    {c.user_id === me.id && <div className="comment-options" ref={menu === c.id ? menuRef : undefined}>
+                        <button type="button" className="icon-button" aria-label="Comment options" aria-expanded={menu === c.id} aria-haspopup="menu" disabled={busy} onClick={() => setMenu(menu === c.id ? null : c.id)}><MoreHorizontal size={20}/></button>
+                        {menu === c.id && <div className="comment-dropdown" role="menu">
+                            <button type="button" role="menuitem" onClick={() => { setMenu(null); setEditing(c.id); setEditBody(c.body); }}><PenLine size={15}/>Edit</button>
+                            <button type="button" role="menuitem" className="danger" onClick={() => {
+                                setMenu(null);
+                                if (!confirm('Delete your comment?')) return;
+                                void run(async () => {
+                                    await api('comments/' + post.id + '/' + c.id, 'DELETE');
+                                    if (active.current) { setItems(previous => previous.filter(x => x.id !== c.id)); changed(); }
+                                });
+                            }}><Trash2 size={15}/>Delete</button>
+                        </div>}
+                    </div>}
                 </div>)}
                 {!items.length && !error && <p className="muted">Be the first to leave a kind word.</p>}
                 {items.length >= 40 && <button className="text-button" disabled={busy} onClick={() => void run(async () => {

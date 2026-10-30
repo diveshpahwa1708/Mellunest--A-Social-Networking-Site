@@ -15,6 +15,13 @@
       "when": 1792320007125,
       "tag": "0001_superb_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793336400000,
+      "tag": "0002_comment_likes",
+      "breakpoints": true
     }
   ]
 }
