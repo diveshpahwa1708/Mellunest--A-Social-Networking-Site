@@ -314,7 +314,7 @@ export default function App() {
  {error && <div className="alert error" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss error"><X size={16}/></button></div>}{notice && <div className="toast" role="status"><Check size={18}/>{notice}</div>}
  <main className={'content ' + (page === 'messages' ? 'message-content' : '')}>
  {['home', 'explore', 'saved', 'post', 'profile'].includes(page) && <div className="feed-layout"><section className="feed-main">
- {page === 'home' && <><div className="page-heading"><div><div className="eyebrow"><span /> YOUR DAILY DOSE OF REAL</div><h1>Life, in good company<span>.</span></h1><p>Small moments. Fresh perspectives. Your kind of people.</p></div><span className="heading-flower">✳</span></div><div className="story-section"><div className="section-label"><h2>Around your world</h2><span>Here for 24 hours</span></div><div className="story-strip"><button className="story-add" onClick={() => setCompose({ kind: 'story' })}><span><Plus size={25}/></span><strong>Your moment</strong><small>Add a story</small></button>{stories.map((s, i) => <button className={'story-preview ' + (s.viewed ? 'viewed' : '')} key={s.id} onClick={() => setStoryIndex(i)}><div className="story-image">{s.mime.startsWith('video') ? <video src={media(s.media_id)} muted preload="none"/> : <img src={media(s.media_id)} alt="" loading="lazy" decoding="async"/>}<Avatar user={s} size={26}/></div><strong>{s.username === me.username ? 'Your story' : s.name}</strong></button>)}{stories.length === 0 && <div className="story-invitation"><span>Make room for the everyday.</span><small>A morning coffee. A new view. A moment worth sharing.</small></div>}</div></div><div className="feed-tabs"><button className={tab === 'discover' ? 'selected' : ''} onClick={() => setTab('discover')}>For your curiosity</button><button className={tab === 'following' ? 'selected' : ''} onClick={() => setTab('following')}>Your circle</button><span><span className="status-dot"/>Fresh perspectives</span></div></>}
+ {page === 'home' && <><div className="page-heading"><div><div className="eyebrow"><span /> YOUR DAILY DOSE OF REAL</div><h1>Life, in good company<span>.</span></h1><p>Small moments. Fresh perspectives. Your kind of people.</p></div><span className="heading-flower">✳</span></div><div className="story-section"><div className="section-label"><h2>Around your world</h2><span>Here for 24 hours</span></div><div className="story-strip"><button className="story-add" onClick={() => setCompose({ kind: 'story' })}><span><Plus size={25}/></span><strong>Your moment</strong><small>Add a story</small></button>{stories.map((s, i) => <button className={'story-preview ' + (s.viewed ? 'viewed' : '')} key={s.id} onClick={() => setStoryIndex(i)}><div className="story-image"><StoryPreview key={s.media_id} src={media(s.media_id)} video={s.mime.startsWith('video')}/><Avatar user={s} size={26}/></div><strong>{s.username === me.username ? 'Your story' : s.name}</strong></button>)}{stories.length === 0 && <div className="story-invitation"><span>Make room for the everyday.</span><small>A morning coffee. A new view. A moment worth sharing.</small></div>}</div></div><div className="feed-tabs"><button className={tab === 'discover' ? 'selected' : ''} onClick={() => setTab('discover')}>For your curiosity</button><button className={tab === 'following' ? 'selected' : ''} onClick={() => setTab('following')}>Your circle</button><span><span className="status-dot"/>Fresh perspectives</span></div></>}
  {page === 'explore' && <><div className="page-heading"><div className="eyebrow">A WORLD WORTH EXPLORING</div><h1>Follow your curiosity<span>.</span></h1><p>Find the people who see things a little like you. Or a little differently.</p></div><label className="search-field"><Search size={20}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people by name or username" aria-label="Search people"/></label><div className="people-grid">{people.map(u => <div className="person-card" key={u.id}><button onClick={() => openProfile(u.username)}><Avatar user={u} size={54}/><strong>{u.name}</strong><small>@{u.username}</small></button><Button className={u.followed ? 'outline' : 'soft'} onClick={() => toggleFollow(u)}>{u.followed ? 'Following' : 'Follow'}{u.followed ? <Check size={14}/> : <Plus size={14}/>}</Button></div>)}</div>{search && people.length === 0 && <p className="muted">No people found. Try another name.</p>}<div className="section-label"><h2>Fresh from the community</h2><span>Recent moments</span></div></>}
  {page === 'saved' && <div className="page-heading"><div className="eyebrow"><Lock size={14}/> ONLY YOU</div><h1>Your little collection<span>.</span></h1><p>Keep the moments you want to come back to.</p></div>}
  {page === 'post' && <button className="text-button" onClick={() => navigate('home')}><ArrowLeft size={16}/>Back to your space</button>}
@@ -457,4 +457,82 @@ function CommentsDialog({ post, me, close, profile, changed }: {
             <Button type="submit" aria-label="Post comment" disabled={loading || busy}><Send size={17}/></Button>
         </form>
     </Modal>;
+}
+
+
+// Decode a small still only when the story tile approaches the visible strip.
+// This also covers videos uploaded before thumbnails were introduced.
+function StoryPreview({ src, video }: { src: string; video: boolean }) {
+    const container = useRef<HTMLSpanElement>(null);
+    const [poster, setPoster] = useState('');
+    const [failed, setFailed] = useState(false);
+    useEffect(() => {
+        if (!video) return;
+        let disposed = false, started = false, objectUrl = '';
+        let clip: HTMLVideoElement | null = null;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const release = () => {
+            if (timer) clearTimeout(timer);
+            if (clip) {
+                clip.onloadedmetadata = clip.onseeked = clip.onerror = null;
+                clip.pause();
+                clip.removeAttribute('src');
+                clip.load();
+                clip = null;
+            }
+        };
+        const fail = () => { if (!disposed) setFailed(true); release(); };
+        const start = () => {
+            if (started || disposed) return;
+            started = true;
+            clip = document.createElement('video');
+            clip.muted = true;
+            clip.playsInline = true;
+            clip.preload = 'auto';
+            clip.onloadedmetadata = () => {
+                if (!clip) return;
+                // A small offset avoids the blank opening frame common on mobile.
+                clip.currentTime = Number.isFinite(clip.duration) ? Math.min(0.1, clip.duration / 2) : 0.1;
+            };
+            clip.onseeked = () => {
+                if (!clip || disposed) return;
+                try {
+                    const canvas = document.createElement('canvas');
+                    const scale = Math.min(1, 240 / Math.max(clip.videoWidth, clip.videoHeight));
+                    canvas.width = Math.max(1, Math.round(clip.videoWidth * scale));
+                    canvas.height = Math.max(1, Math.round(clip.videoHeight * scale));
+                    const context = canvas.getContext('2d');
+                    if (!context || !clip.videoWidth) { fail(); return; }
+                    context.drawImage(clip, 0, 0, canvas.width, canvas.height);
+                    release();
+                    canvas.toBlob(blob => {
+                        if (disposed) return;
+                        if (!blob) { setFailed(true); return; }
+                        objectUrl = URL.createObjectURL(blob);
+                        setPoster(objectUrl);
+                    }, 'image/jpeg', 0.8);
+                } catch { fail(); }
+            };
+            clip.onerror = fail;
+            timer = setTimeout(fail, 20000);
+            clip.src = src;
+            clip.load();
+        };
+        const observer = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+            if (entries.some(entry => entry.isIntersecting)) { observer?.disconnect(); start(); }
+        }, { rootMargin: '80px' }) : null;
+        if (observer && container.current) observer.observe(container.current);
+        else start();
+        return () => {
+            disposed = true;
+            observer?.disconnect();
+            release();
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [src, video]);
+    if (!video) return <img src={src} alt="" loading="lazy" decoding="async"/>;
+    return <span ref={container} style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'var(--soft)', color: 'var(--brand)' }}>
+        {poster ? <img src={poster} alt="Video story preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/> :
+            failed ? <Film size={28} aria-label="Video story"/> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
+    </span>;
 }
