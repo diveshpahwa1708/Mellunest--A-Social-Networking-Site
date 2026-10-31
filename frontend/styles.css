@@ -204,3 +204,8 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .button.follow-toggle{width:110px;min-width:110px;flex:0 0 110px;min-height:44px;white-space:nowrap}
 .button.follow-toggle:hover:not(:disabled),.button.follow-toggle:active{transform:none}
 .follow-small{flex-shrink:0}
+
+/* Give all three profile statistics identical sizing and alignment. */
+.profile-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:8px;width:100%;max-width:420px}
+.profile-stats>span,.profile-stats>button{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:44px;padding:0;line-height:1.5;white-space:nowrap}
+.profile-stats b{margin-right:0;font-variant-numeric:tabular-nums}
