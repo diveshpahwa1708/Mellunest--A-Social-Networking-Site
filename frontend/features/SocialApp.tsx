@@ -411,6 +411,42 @@ function CommentsDialog({ post, me, close, profile, changed }: {
         return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape, true); };
     }, [menu]);
 
+    const likeStates = useRef(new Map<string, { desired: boolean; confirmed: boolean; count: number; running: boolean }>());
+    const mergeLikes = (rows: Item[]) => rows.map(row => {
+        const state = likeStates.current.get(row.id);
+        return state ? { ...row, liked: state.desired, likes: Math.max(0, state.count + Number(state.desired) - Number(state.confirmed)) } : row;
+    });
+    const paintLike = (id: string) => {
+        if (active.current) setItems(rows => rows.map(row => row.id === id ? mergeLikes([row])[0] : row));
+    };
+    const toggleCommentLike = (comment: Item) => {
+        let state = likeStates.current.get(comment.id);
+        if (!state) {
+            state = { desired: !!comment.liked, confirmed: !!comment.liked, count: Number(comment.likes || 0), running: false };
+            likeStates.current.set(comment.id, state);
+        }
+        state.desired = !state.desired;
+        paintLike(comment.id);
+        setError('');
+        if (state.running) return;
+        state.running = true;
+        // Serialize this comment only; rapid taps keep the user's latest intent.
+        void (async () => {
+            try {
+                while (state.desired !== state.confirmed) {
+                    const target = state.desired;
+                    const r = await api('comments/' + post.id + '/' + comment.id + '/like', 'POST', { active: target });
+                    state.confirmed = !!r.liked;
+                    state.count = Number(r.likes || 0);
+                    paintLike(comment.id);
+                }
+            } catch (e: any) {
+                state.desired = state.confirmed;
+                paintLike(comment.id);
+                if (active.current) setError(e.message || 'Could not save your like. Please try again.');
+            } finally { state.running = false; }
+        })();
+    };
     const active = useRef(false);
     const lock = useRef(false);
     useEffect(() => {
@@ -419,7 +455,7 @@ function CommentsDialog({ post, me, close, profile, changed }: {
         setLoading(true);
         setError('');
         api('comments/' + post.id).then(r => {
-            if (!cancelled) setItems(r.items);
+            if (!cancelled) setItems(mergeLikes(r.items));
         }).catch(e => {
             if (!cancelled) setError(e.message);
         }).finally(() => {
@@ -457,17 +493,7 @@ function CommentsDialog({ post, me, close, profile, changed }: {
                             <div><Button type="submit" disabled={busy || !editBody.trim()}>Save</Button><Button className="outline" disabled={busy} onClick={() => setEditing(null)}>Cancel</Button></div>
                         </form> : <p>{c.body}</p>}
                         <small>{ago(c.created)}</small>
-                        <button type="button" className={'comment-like' + (c.liked ? ' liked' : '')} aria-label={c.liked ? 'Unlike comment' : 'Like comment'} aria-pressed={!!c.liked} disabled={busy} onClick={() => void run(async () => {
-                            const liked = !c.liked;
-                            setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked, likes: Math.max(0, Number(x.likes || 0) + (liked ? 1 : -1)) } : x));
-                            try {
-                                const r = await api('comments/' + post.id + '/' + c.id + '/like', 'POST', { active: liked });
-                                if (active.current) setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked: !!r.liked, likes: r.likes } : x));
-                            } catch (e) {
-                                if (active.current) setItems(previous => previous.map(x => x.id === c.id ? { ...x, liked: c.liked, likes: c.likes } : x));
-                                throw e;
-                            }
-                        })}><Heart size={15} fill={c.liked ? 'currentColor' : 'none'}/><span>{c.liked ? 'Liked' : 'Like'} · {c.likes || 0}</span></button>
+                        <button type="button" className={'comment-like' + (c.liked ? ' liked' : '')} aria-label={c.liked ? 'Unlike comment' : 'Like comment'} aria-pressed={!!c.liked} onClick={() => toggleCommentLike(c)}><Heart size={15} fill={c.liked ? 'currentColor' : 'none'}/><span>{c.liked ? 'Liked' : 'Like'} · {c.likes || 0}</span></button>
                     </div>
                     {c.user_id === me.id && <div className="comment-options" ref={menu === c.id ? menuRef : undefined}>
                         <button type="button" className="icon-button" aria-label="Comment options" aria-expanded={menu === c.id} aria-haspopup="menu" disabled={busy} onClick={() => setMenu(menu === c.id ? null : c.id)}><MoreHorizontal size={20}/></button>
@@ -498,7 +524,7 @@ function CommentsDialog({ post, me, close, profile, changed }: {
             setDraft('');
             changed();
             const r = await api('comments/' + post.id);
-            if (active.current) setItems(r.items);
+            if (active.current) setItems(mergeLikes(r.items));
         }); }}>
             <input aria-label="Comment" placeholder="Add a kind word…" maxLength={1000} value={draft} onChange={e => setDraft(e.target.value)} disabled={loading || busy} required/>
             <Button type="submit" aria-label="Post comment" disabled={loading || busy}><Send size={17}/></Button>
