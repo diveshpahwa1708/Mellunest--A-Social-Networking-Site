@@ -185,12 +185,12 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                 fail(403, 'Not authorized.');
             const expired = await all('SELECT media_id FROM stories WHERE expires<=? LIMIT 100', now());
             for (const m of expired) {
-                await env.BUCKET.delete(m.media_id);
+                await env.BUCKET.delete([m.media_id, m.media_id + '.poster.jpg']);
                 await run('DELETE FROM media WHERE id=?', m.media_id);
             }
             const orphan = await all("SELECT id FROM media WHERE post_id IS NULL AND created<? AND id NOT IN(SELECT media_id FROM stories) AND id NOT IN(SELECT avatar FROM users WHERE avatar IS NOT NULL) LIMIT 100", now() - day);
             for (const m of orphan) {
-                await env.BUCKET.delete(m.id);
+                await env.BUCKET.delete([m.id, m.id + '.poster.jpg']);
                 await run('DELETE FROM media WHERE id=?', m.id);
             }
             await batch([['DELETE FROM sessions WHERE expires<?', now()], ['DELETE FROM tokens WHERE expires<?', now()], ['DELETE FROM rate WHERE expires<?', now()]]);
@@ -203,7 +203,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             if (method === 'POST') {
                 await limit('upload:' + u.id, 30, 3600000);
                 const max = 30 * 1024 * 1024;
-                if (Number(req.headers.get('content-length')) > max + 10000)
+                if (Number(req.headers.get('content-length')) > max + 210000)
                     fail(413, 'Maximum upload size is 30 MB.');
                 const form = await req.formData(), file = form.get('file') as File, kind = form.get('kind');
                 if (!file || typeof file.arrayBuffer !== 'function' || !['post', 'story', 'avatar'].includes(String(kind)))
@@ -224,13 +224,23 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                     mime = 'video/webm';
                 if (!mime || file.type !== mime || (kind === 'avatar' && !mime.startsWith('image/')))
                     fail(400, 'Use a valid JPEG, PNG, WebP, MP4 or WebM file.');
+                const poster = form.get('poster') as File | null;
+                let posterBytes: Uint8Array | null = null;
+                if (poster) {
+                    if (kind !== 'story' || !mime.startsWith('video/') || typeof poster.arrayBuffer !== 'function' || poster.size > 200000 || poster.size < 4)
+                        fail(400, 'Invalid story preview.');
+                    posterBytes = new Uint8Array(await poster.arrayBuffer());
+                    if (poster.type !== 'image/jpeg' || posterBytes[0] !== 255 || posterBytes[1] !== 216 || posterBytes[2] !== 255)
+                        fail(400, 'Use a JPEG story preview.');
+                }
                 const id = uid();
                 await env.BUCKET.put(id, bytes, { httpMetadata: { contentType: mime } });
                 try {
+                    if (posterBytes) await env.BUCKET.put(id + '.poster.jpg', posterBytes, { httpMetadata: { contentType: 'image/jpeg' } });
                     await run('INSERT INTO media(id,user_id,kind,mime,size,created) VALUES(?,?,?,?,?,?)', id, u.id, kind, mime, file.size, now());
                 }
                 catch (e) {
-                    await env.BUCKET.delete(id);
+                    await env.BUCKET.delete([id, id + '.poster.jpg']);
                     throw e;
                 }
                 return json({ id, mime }, 201);
@@ -251,6 +261,15 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                         OR (m.kind='avatar' AND (m.user_id=? OR EXISTS(SELECT 1 FROM users WHERE avatar=m.id)))
                     )`, p[1], u.id, u.id, u.id, u.id, now(), u.id, u.id);
                 if (!m) fail(404, 'Media not found.');
+                if (url.searchParams.get('preview') === '1') {
+                    if (m.kind !== 'story' || !m.mime.startsWith('video/')) fail(404, 'Preview not found.');
+                    const poster = await env.BUCKET.get(m.id + '.poster.jpg');
+                    if (!poster) fail(404, 'Preview not found.');
+                    return new Response(poster.body, { headers: {
+                        'Content-Type': 'image/jpeg', 'Content-Length': String(poster.size),
+                        'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'
+                    } });
+                }
                 const cacheable = m.kind === 'avatar' || (m.kind === 'post' && m.post_status === 'published');
                 const etag = '"' + m.id + '-' + m.size + '-' + m.created + '"';
                 const headers = new Headers({
@@ -348,7 +367,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                     fail(403, 'Only the author can delete this post.');
                 const files = await all('SELECT id FROM media WHERE post_id=?', post.id);
                 for (const f of files)
-                    await env.BUCKET.delete(f.id);
+                    await env.BUCKET.delete([f.id, f.id + '.poster.jpg']);
                 await batch([['DELETE FROM posts WHERE id=?', post.id], ['DELETE FROM notifications WHERE target=?', post.id]]);
                 return json({ ok: true });
             }
@@ -436,7 +455,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                     fail(400, 'Enter your username to confirm.');
                 const files = await all('SELECT id FROM media WHERE user_id=?', u.id);
                 for (const f of files)
-                    await env.BUCKET.delete(f.id);
+                    await env.BUCKET.delete([f.id, f.id + '.poster.jpg']);
                 await run('DELETE FROM users WHERE id=?', u.id);
                 return json({ ok: true }, 200, { 'Set-Cookie': 'mellunest=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0' });
             }
@@ -483,7 +502,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             if (method === 'DELETE') {
                 if (s.user_id !== u.id)
                     fail(403, 'Only the author can delete this story.');
-                await env.BUCKET.delete(s.media_id);
+                await env.BUCKET.delete([s.media_id, s.media_id + '.poster.jpg']);
                 await run('DELETE FROM media WHERE id=?', s.media_id);
                 return json({ ok: true });
             }

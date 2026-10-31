@@ -627,6 +627,7 @@ function StoryPreview({ src, video }: { src: string; video: boolean }) {
         if (!clip) { setFailed(true); return; }
         let disposed = false, started = false, finished = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
+        let cover: HTMLImageElement | null = null;
         setPoster('');
         setFailed(false);
         const release = () => {
@@ -678,21 +679,42 @@ function StoryPreview({ src, video }: { src: string; video: boolean }) {
             timer = setTimeout(fail, 10000);
             clip.src = src;
             clip.load();
+            void clip.play().then(capture).catch(() => {});
+        };
+        const loadPreview = () => {
+            // Prefer the saved JPEG: no video decoding is needed on the viewer's device.
+            cover = new Image();
+            const previewUrl = src + (src.includes('?') ? '&' : '?') + 'preview=1';
+            const fallback = () => {
+                if (cover) { cover.onload = cover.onerror = null; }
+                if (timer) clearTimeout(timer);
+                start();
+            };
+            cover.onload = () => {
+                if (disposed || finished) return;
+                finished = true;
+                setPoster(previewUrl);
+                release();
+            };
+            cover.onerror = fallback;
+            timer = setTimeout(fallback, 4000);
+            cover.src = previewUrl;
         };
         const observer = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { observer?.disconnect(); start(); }
+            if (entries.some(entry => entry.isIntersecting)) { observer?.disconnect(); loadPreview(); }
         }, { rootMargin: '80px' }) : null;
         if (observer && container.current) observer.observe(container.current);
-        else start();
+        else loadPreview();
         return () => {
             disposed = true;
             observer?.disconnect();
+            if (cover) { cover.onload = cover.onerror = null; cover.src = ''; }
             release();
         };
     }, [src, video]);
     if (!video) return <img src={src} alt="" loading="lazy" decoding="async"/>;
     return <span ref={container} style={{ position: 'relative', display: 'grid', placeItems: 'center', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 11, background: 'var(--soft)', color: 'var(--brand)' }}>
-        <video ref={decoder} muted playsInline preload="auto" aria-hidden="true" tabIndex={-1} style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}/>
+        <video ref={decoder} muted playsInline preload="auto" aria-hidden="true" tabIndex={-1} style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0.01, pointerEvents: 'none' }}/>
         {poster && !failed ? <img src={poster} alt="Video story preview" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'cover' }}/> :
             failed ? <span style={{ display: 'grid', justifyItems: 'center', gap: 4 }}><Film size={24} aria-hidden="true"/><span style={{ fontSize: 9 }}>Tap to view</span></span> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
     </span>;
