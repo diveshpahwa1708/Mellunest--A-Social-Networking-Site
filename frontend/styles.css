@@ -209,3 +209,36 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .feed-tabs{overflow-y:hidden;scrollbar-width:none}
 .feed-tabs::-webkit-scrollbar{display:none;width:0;height:0}
 .feed-tabs button.selected:after{bottom:0}
+
+/* A quiet sage scrollbar for the left navigation, including dark mode. */
+.sidebar{
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    --sidebar-scroll-track:var(--panel);
+    --sidebar-scroll-thumb:#9aaf98;
+    --sidebar-scroll-hover:#6f8d76;
+    --sidebar-scroll-active:#204b40;
+    scrollbar-width:thin;
+    scrollbar-color:var(--sidebar-scroll-thumb) var(--sidebar-scroll-track);
+}
+[data-theme=dark] .sidebar{
+    --sidebar-scroll-thumb:#607c63;
+    --sidebar-scroll-hover:#8fab85;
+    --sidebar-scroll-active:#c6d8ad;
+}
+@supports selector(::-webkit-scrollbar){
+    .sidebar{scrollbar-width:auto;scrollbar-color:auto}
+    .sidebar::-webkit-scrollbar{width:8px;height:8px}
+    .sidebar::-webkit-scrollbar-track{background:var(--sidebar-scroll-track);border-radius:20px;margin-block:16px}
+    .sidebar::-webkit-scrollbar-thumb{background:var(--sidebar-scroll-thumb);border:2px solid var(--sidebar-scroll-track);border-radius:20px;min-height:40px}
+    .sidebar::-webkit-scrollbar-thumb:hover{background:var(--sidebar-scroll-hover)}
+    .sidebar::-webkit-scrollbar-thumb:active{background:var(--sidebar-scroll-active)}
+    .sidebar::-webkit-scrollbar-button{display:none}
+    .sidebar::-webkit-scrollbar-corner{background:var(--sidebar-scroll-track)}
+}
+@media(forced-colors:active){
+    .sidebar{scrollbar-color:auto}
+    .sidebar::-webkit-scrollbar-thumb{background:ButtonText;border-color:Canvas}
+    .sidebar::-webkit-scrollbar-track{background:Canvas}
+}
