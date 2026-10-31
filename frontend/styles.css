@@ -247,3 +247,34 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .post-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 44px;column-gap:8px}
 .post-actions>button:not(.save-action){width:100%;min-width:0;min-height:44px;justify-content:center;padding-inline:4px}
 .post-actions .save-action{width:44px;min-width:44px;min-height:44px;margin-left:0;justify-content:center}
+
+/* Match the Edit Profile dialog's scrollbar to Mellunest. */
+.modal:has(> .profile-form){
+    --profile-scroll-thumb:#9aaf98;
+    --profile-scroll-hover:#6f8d76;
+    --profile-scroll-active:#204b40;
+    overflow-y:auto;
+    overflow-x:hidden;
+    scrollbar-width:thin;
+    scrollbar-color:var(--profile-scroll-thumb) var(--panel);
+}
+[data-theme=dark] .modal:has(> .profile-form){
+    --profile-scroll-thumb:#607c63;
+    --profile-scroll-hover:#8fab85;
+    --profile-scroll-active:#c6d8ad;
+}
+@supports selector(::-webkit-scrollbar){
+    .modal:has(> .profile-form){scrollbar-width:auto;scrollbar-color:auto}
+    .modal:has(> .profile-form)::-webkit-scrollbar{width:8px;height:8px}
+    .modal:has(> .profile-form)::-webkit-scrollbar-track{background:var(--panel);border-radius:20px;margin-block:18px}
+    .modal:has(> .profile-form)::-webkit-scrollbar-thumb{background:var(--profile-scroll-thumb);border:2px solid var(--panel);border-radius:20px;min-height:40px}
+    .modal:has(> .profile-form)::-webkit-scrollbar-thumb:hover{background:var(--profile-scroll-hover)}
+    .modal:has(> .profile-form)::-webkit-scrollbar-thumb:active{background:var(--profile-scroll-active)}
+    .modal:has(> .profile-form)::-webkit-scrollbar-button{display:none}
+    .modal:has(> .profile-form)::-webkit-scrollbar-corner{background:var(--panel)}
+}
+@media(forced-colors:active){
+    .modal:has(> .profile-form){scrollbar-color:auto}
+    .modal:has(> .profile-form)::-webkit-scrollbar-thumb{background:ButtonText;border-color:Canvas}
+    .modal:has(> .profile-form)::-webkit-scrollbar-track{background:Canvas}
+}
