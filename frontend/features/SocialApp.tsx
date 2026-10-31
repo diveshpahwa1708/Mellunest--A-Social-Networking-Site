@@ -9,7 +9,7 @@ import {PostCard} from './PostCard';
 import {Composer} from './Composer';
 import {ProfileEditor} from './ProfileEditor';
 export default function App() {
-    const [auth, setAuth] = useState<Item | null>(null), [boot, setBoot] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [page, setPage] = useState('home'), [tab, setTab] = useState('discover'), [items, setItems] = useState<Item[]>([]), [next, setNext] = useState<number | null>(null), [people, setPeople] = useState<Item[]>([]), [stories, setStories] = useState<Item[]>([]), [loading, setLoading] = useState(false), [search, setSearch] = useState(''), [profile, setProfile] = useState<Item | null>(null), [profileTab, setProfileTab] = useState('posts'), [notifications, setNotifications] = useState<Item[]>([]), [conversations, setConversations] = useState<Item[]>([]), [current, setCurrent] = useState<Item | null>(null), [messages, setMessages] = useState<Item[]>([]), [message, setMessage] = useState(''), [sending, setSending] = useState(false), [connected, setConnected] = useState(false), [compose, setCompose] = useState<Item | null>(null), [storyIndex, setStoryIndex] = useState<number | null>(null), [comments, setComments] = useState<Item | null>(null), [edit, setEdit] = useState(false), [list, setList] = useState<{
+    const [auth, setAuth] = useState<Item | null>(null), [boot, setBoot] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [page, setPage] = useState('home'), [tab, setTab] = useState('discover'), [items, setItems] = useState<Item[]>([]), [next, setNext] = useState<number | null>(null), [people, setPeople] = useState<Item[]>([]), [stories, setStories] = useState<Item[]>([]), [loading, setLoading] = useState(false), [search, setSearch] = useState(''), [profile, setProfile] = useState<Item | null>(null), [profileTab, setProfileTab] = useState('posts'), [notifications, setNotifications] = useState<Item[]>([]), [conversations, setConversations] = useState<Item[]>([]), [current, setCurrent] = useState<Item | null>(null), [messages, setMessages] = useState<Item[]>([]), [message, setMessage] = useState(''), [connected, setConnected] = useState(false), [compose, setCompose] = useState<Item | null>(null), [storyIndex, setStoryIndex] = useState<number | null>(null), [comments, setComments] = useState<Item | null>(null), [edit, setEdit] = useState(false), [list, setList] = useState<{
         title: string;
         items: Item[];
     } | null>(null), [dark, setDark] = useState(false), [authMode, setAuthMode] = useState('login'), [token, setToken] = useState('');
@@ -24,6 +24,8 @@ export default function App() {
     const followActions = useRef(new Map<string, { desired: boolean; confirmed: boolean; running: boolean }>());
     const messageRevision = useRef(0);
     const sendLock = useRef(false);
+    const outbox = useRef(new Map<string, Item>());
+    const sendingIds = useRef(new Set<string>());
     const [changingPassword, setChangingPassword] = useState(false);
     const [passwordOpen, setPasswordOpen] = useState(false);
     const [passwordError, setPasswordError] = useState('');
@@ -141,7 +143,16 @@ export default function App() {
         return; const timer = setTimeout(() => api('users?q=' + encodeURIComponent(search)).then(r => setPeople(r.items)).catch(e => setError(e.message)), 250); return () => clearTimeout(timer); }, [search, page, me?.id]);
     useEffect(() => { currentRef.current = current; }, [current]);
     const loadMessages = async (id: string, older = false) => { const revision = messageRevision.current; const r = await api('messages/' + id + (older && messages.length ? '?before=' + messages[0].created : '')); if (currentRef.current?.conversation_id !== id || revision !== messageRevision.current)
-        return; setMessages(old => older ? [...r.items.reverse(), ...old] : r.items.reverse()); if (!older) {
+        return;
+        const fetched = [...r.items].reverse();
+        for (const item of fetched) outbox.current.delete(item.id);
+        const pending = [...outbox.current.values()].filter(item => item.conversation_id === id);
+        setMessages(old => {
+            const rows = older ? [...fetched, ...old] : fetched;
+            const merged = new Map(rows.map((item: Item) => [item.id, item]));
+            for (const item of pending) merged.set(item.id, item);
+            return [...merged.values()];
+        }); if (!older) {
         if (r.items.some((m: Item) => m.sender !== me.id && !m.read))
             void api('messages/' + id, 'POST', { read: true }).catch(() => {});
         if (nearBottom.current)
@@ -325,31 +336,48 @@ export default function App() {
         tell('Post link copied.');
     } });
     const openComments = (p: Item) => setComments(p);
-    const sendMessage = async () => {
-        const conversationId = currentRef.current?.conversation_id;
-        const body = message.trim();
-        if (!body || !conversationId || sendLock.current) return;
-        sendLock.current = true;
-        setSending(true);
+    const sendMessage = async (retry?: Item) => {
+        const conversationId = retry?.conversation_id || currentRef.current?.conversation_id;
+        const body = retry?.body || message.trim();
+        if (!body || !conversationId || (!retry && sendLock.current)) return;
+        const id = retry?.id || crypto.randomUUID();
+        if (sendingIds.current.has(id)) return;
+        // Block duplicate submits in this event only, not while the network is busy.
+        if (!retry) { sendLock.current = true; queueMicrotask(() => { sendLock.current = false; }); }
+        const optimistic = { id, conversation_id: conversationId, sender: me.id, body,
+            created: retry?.created || Date.now(), read: 0, delivery: 'sending' };
+        sendingIds.current.add(id);
+        outbox.current.set(id, optimistic);
+        messageRevision.current++;
         setError('');
+        if (currentRef.current?.conversation_id === conversationId) {
+            setMessages(old => old.some(m => m.id === id) ? old.map(m => m.id === id ? optimistic : m) : [...old, optimistic]);
+            if (!retry) setMessage('');
+            nearBottom.current = true;
+            requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }));
+        }
         try {
-            const result = await api('messages/' + conversationId, 'POST', { id: crypto.randomUUID(), body });
+            const result = await api('messages/' + conversationId, 'POST', { id, body });
+            outbox.current.delete(id);
             messageRevision.current++;
             if (currentRef.current?.conversation_id === conversationId) {
-                setMessages(old => old.some(m => m.id === result.item.id) ? old : [...old, result.item]);
-                setMessage(old => old.trim() === body ? '' : old);
-                nearBottom.current = true;
-                requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }));
+                setMessages(old => old.some(m => m.id === id) ? old.map(m => m.id === id ? result.item : m) : [...old, result.item]);
             }
-            setConversations(old => old.map(c => c.conversation_id === conversationId
+            setConversations(old => old.map(c => c.conversation_id === conversationId && (c.recent || 0) <= result.item.created
                 ? { ...c, preview: result.item.body, recent: result.item.created } : c)
                 .sort((a, b) => (b.recent || b.created) - (a.recent || a.created)));
         } catch (e: any) {
-            setError(e.message);
-        } finally {
-            sendLock.current = false;
-            setSending(false);
-        }
+            // A concurrent refresh may already have confirmed server receipt.
+            if (outbox.current.has(id)) {
+                const failed = { ...optimistic, delivery: 'failed' };
+                outbox.current.set(id, failed);
+                messageRevision.current++;
+                if (currentRef.current?.conversation_id === conversationId) {
+                    setMessages(old => old.map(m => m.id === id ? failed : m));
+                    setError(e.message);
+                }
+            }
+        } finally { sendingIds.current.delete(id); }
     };
     const logout = () => act(async () => { await api('auth/logout', 'POST', {}); location.replace('/?auth=login'); });
     if (boot)
@@ -378,7 +406,7 @@ export default function App() {
             act(async () => { await api('posts/' + p.id, 'DELETE'); setItems(items.filter(x => x.id !== p.id)); tell('Moment deleted.'); }); }} interact={(type: string) => interactPost(p, type)}/>)}</div>}{next && <Button className="outline load-more" disabled={loading} onClick={() => loadPosts(true)}>{loading ? 'Loading…' : 'A few more moments'}</Button>}</>}
  </section><aside className="right-rail"><div className="welcome-card"><div className="welcome-art"><span>◒</span><span>◓</span><span>✳</span></div><span className="eyebrow">A SPACE TO BE YOURSELF</span><h2>Less perfect.<br />More present.</h2><p>Your everyday has a story.<br />Let someone in on it.</p><button onClick={() => setCompose({ kind: 'post' })}>Share something real <ArrowUpRight size={17}/></button></div><div className="suggestions"><div className="section-label"><h2>Meet your people</h2><button onClick={() => navigate('explore')}>Explore</button></div>{people.slice(0, 4).map(u => <div className="suggestion" key={u.id}><button className="person-link" onClick={() => openProfile(u.username)}><Avatar user={u}/><span><strong>{u.name}</strong><small>@{u.username}</small></span></button><button className={'follow-small ' + (u.followed ? 'following' : '')} aria-label={(u.followed ? 'Unfollow ' : 'Follow ') + u.name} aria-pressed={!!u.followed} onClick={() => toggleFollow(u)}>{u.followed ? <Check size={17}/> : <Plus size={17}/>}</button></div>)}{!people.length && <p className="muted">A new community starts with you. Your people will appear here as they join.</p>}</div><div className="community-note"><Globe size={20}/><p>Different worlds.<br /><strong>One shared space.</strong></p></div><footer>Made for the moments between.<br /><span>Mellunest © {new Date().getFullYear()}</span></footer></aside></div>}
  {page === 'messages' && <><div className="page-heading"><div className="eyebrow">KEEP THE CONVERSATION GOING</div><h1>A little closer<span>.</span></h1></div><div className="chat-layout"><section className="conversation-list"><header><h2>Conversations</h2><button className="icon-button" aria-label="Start conversation" onClick={() => setList({ title: 'Start a conversation', items: people })}><PenLine size={19}/></button></header><div className="connection"><span className={'status-dot ' + (!connected ? 'offline' : '')}/>{connected ? 'Connected · live updates' : 'Reconnecting…'}</div>{conversations.map(c => <button className={'conversation ' + (current?.conversation_id === c.conversation_id ? 'selected' : '')} key={c.conversation_id} onClick={() => openChat(c)}><Avatar user={c}/><span><strong>{c.name}</strong><small>{c.preview || 'Say your first hello'}</small></span>{c.unread > 0 && <b>{c.unread}</b>}</button>)}{conversations.length === 0 && <Empty title="Start with hello." detail="Find someone in Discover, then tap Message." action={<Button className="soft" onClick={() => navigate('explore')}>Find people</Button>}/>}</section><section className="chat-window">{chatLoading && !current ? <div className="navigation-status" role="status"><LoaderCircle className="spin" size={24}/><span>Opening conversation…</span></div> : current ? <><header><button className="person-link" onClick={() => openProfile(current.username)}><Avatar user={current}/><span><strong>{current.name}</strong><small>@{current.username}</small></span></button><ShieldCheck size={19}/></header><div className="chat-history" ref={chatPane} onScroll={() => { const el = chatPane.current; if (el)
-        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" disabled={chatLoading} onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button>{chatLoading && <div className="navigation-status compact" role="status"><LoaderCircle className="spin" size={20}/><span>Loading messages…</span></div>}<p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={e => { e.preventDefault(); void sendMessage(); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={sending || !message.trim()} aria-label={sending ? "Sending message" : "Send message"}>{sending ? <LoaderCircle className="spin" size={18}/> : <Send size={18}/>}</Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
+        nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}><button className="text-button" disabled={chatLoading} onClick={() => act(() => loadMessages(current.conversation_id, true))}>Load earlier messages</button>{chatLoading && <div className="navigation-status compact" role="status"><LoaderCircle className="spin" size={20}/><span>Loading messages…</span></div>}<p className="chat-privacy"><Lock size={12}/>Only conversation participants can access these messages.</p>{messages.map(m => <div className={'bubble-wrap ' + (m.sender === me.id ? 'mine' : '')} key={m.id}><div className="bubble">{m.body.split(/(https?:\/\/[^\s]+)/g).map((part: string, i: number) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div><small>{new Date(m.created).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{m.sender === me.id && (m.delivery === 'sending' ? <span role="status">Sending…</span> : m.delivery === 'failed' ? <button type="button" className="text-button" onClick={() => void sendMessage(m)}>Not sent · Retry</button> : m.read ? <CheckCheck size={13} aria-label="Read"/> : <Check size={13} aria-label="Sent"/>)}</small></div>)}<div ref={bottom}/></div><form className="message-form" onSubmit={e => { e.preventDefault(); void sendMessage(); }}><input aria-label="Message" placeholder="A thought, a hello, a little something…" maxLength={2000} value={message} onChange={e => setMessage(e.target.value)}/><Button type="submit" disabled={!message.trim()} aria-label="Send message"><Send size={18}/></Button></form></> : <Empty title="Good conversations belong here." detail="Pick a conversation or reach out to someone new." action={<MessageCircle size={40}/>}/>}</section></div></>}
  {page === 'notifications' && <section className="activity-page"><div className="page-heading"><div className="eyebrow">THE LITTLE CONNECTIONS</div><h1>Your ripple effect<span>.</span></h1><p>A little love from around your world.</p></div><div className="section-label"><h2>Recent activity</h2><button onClick={() => act(async () => { await api('notifications', 'POST', {}); await refreshAux(); })}>Mark all as read</button></div>{notifications.length ? notifications.map(n => <button key={n.id} className={'notification card ' + (!n.read ? 'unread' : '')} onClick={() => { if (n.kind === 'follow')
         openProfile(n.username);
     else if (n.kind === 'message') {
