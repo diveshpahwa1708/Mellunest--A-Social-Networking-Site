@@ -195,3 +195,7 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .comment-edit{display:grid;gap:8px;margin:8px 0}
 .comment-edit textarea{min-height:80px;font-size:16px}
 .comment-edit>div{display:flex;gap:8px}
+
+/* Reserve the same hit area for Like, zero and multi-digit counts. */
+.post-actions .moment-like{flex:0 0 76px;width:76px;min-width:76px;min-height:44px;justify-content:flex-start;box-sizing:border-box;transform:none}
+.post-actions .moment-like>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}

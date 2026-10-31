@@ -15,6 +15,11 @@ export default function App() {
     } | null>(null), [dark, setDark] = useState(false), [authMode, setAuthMode] = useState('login'), [token, setToken] = useState('');
     const bottom = useRef<HTMLDivElement>(null), chatPane = useRef<HTMLDivElement>(null), nearBottom = useRef(true), refreshRef = useRef<() => void>(() => { }), currentRef = useRef<Item | null>(null);
     const pendingActions = useRef(new Set<string>());
+    const momentLikes = useRef(new Map<string, { desired: boolean; confirmed: boolean; count: number; running: boolean }>());
+    const mergeMomentLikes = (rows: Item[]) => rows.map(row => {
+        const state = momentLikes.current.get(row.id);
+        return state ? { ...row, liked: state.desired, likes: Math.max(0, state.count + Number(state.desired) - Number(state.confirmed)) } : row;
+    });
     const followRevision = useRef(0);
     const messageRevision = useRef(0);
     const sendLock = useRef(false);
@@ -112,7 +117,7 @@ export default function App() {
             q += '&before=' + next;
         const r = await api(q);
         if (request !== postRequest.current) return;
-        setItems(old => append ? [...old, ...r.items] : r.items);
+        setItems(old => append ? [...old, ...mergeMomentLikes(r.items)] : mergeMomentLikes(r.items));
         setNext(r.next);
     }
     catch (e: any) {
@@ -193,6 +198,39 @@ export default function App() {
         }
     };
     const interactPost = async (p: Item, type: string) => {
+        if (type === 'like') {
+            let state = momentLikes.current.get(p.id);
+            if (!state) {
+                state = { desired: !!p.liked, confirmed: !!p.liked, count: Number(p.likes || 0), running: false };
+                momentLikes.current.set(p.id, state);
+            }
+            state.desired = !state.desired;
+            const paint = () => setItems(rows => mergeMomentLikes(rows));
+            paint();
+            setError('');
+            if (state.running) return;
+            state.running = true;
+            try {
+                while (state.desired !== state.confirmed) {
+                    const target = state.desired;
+                    await api('like/' + p.id, 'POST', { active: target });
+                    state.count = Math.max(0, state.count + Number(target) - Number(state.confirmed));
+                    state.confirmed = target;
+                    paint();
+                }
+            } catch (e: any) {
+                state.desired = state.confirmed;
+                paint();
+                setError(e.message);
+            } finally {
+                state.running = false;
+                // Commit the final state before removing the in-flight overlay.
+                const liked = state.desired, likes = state.count;
+                setItems(rows => rows.map(row => row.id === p.id ? { ...row, liked, likes } : row));
+                momentLikes.current.delete(p.id);
+            }
+            return;
+        }
         const key = type + ':' + p.id;
         if (pendingActions.current.has(key)) return;
         pendingActions.current.add(key);
