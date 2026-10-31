@@ -197,7 +197,7 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .comment-edit>div{display:flex;gap:8px}
 
 /* Reserve the same hit area for Like, zero and multi-digit counts. */
-.post-actions .moment-like{flex:0 0 76px;width:76px;min-width:76px;min-height:44px;justify-content:flex-start;box-sizing:border-box;transform:none}
+.post-actions .moment-like{flex:0 0 60px;width:60px;min-width:60px;min-height:44px;padding-inline:4px;justify-content:flex-start;box-sizing:border-box;transform:none}
 .post-actions .moment-like>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
 
 /* Follow labels and hover states must not move the click target. */
