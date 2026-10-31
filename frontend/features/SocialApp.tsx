@@ -590,57 +590,64 @@ function CommentsDialog({ post, me, close, profile, changed }: {
 // This also covers videos uploaded before thumbnails were introduced.
 function StoryPreview({ src, video }: { src: string; video: boolean }) {
     const container = useRef<HTMLSpanElement>(null);
+    const decoder = useRef<HTMLVideoElement>(null);
     const [poster, setPoster] = useState('');
     const [failed, setFailed] = useState(false);
     useEffect(() => {
         if (!video) return;
-        let disposed = false, started = false, objectUrl = '';
-        let clip: HTMLVideoElement | null = null;
+        const clip = decoder.current;
+        if (!clip) { setFailed(true); return; }
+        let disposed = false, started = false, finished = false;
         let timer: ReturnType<typeof setTimeout> | undefined;
+        setPoster('');
+        setFailed(false);
         const release = () => {
             if (timer) clearTimeout(timer);
-            if (clip) {
-                clip.onloadedmetadata = clip.onseeked = clip.onerror = null;
-                clip.pause();
-                clip.removeAttribute('src');
-                clip.load();
-                clip = null;
-            }
+            clip.onloadedmetadata = clip.onloadeddata = clip.oncanplay = clip.onseeked = clip.onerror = null;
+            clip.pause();
+            clip.removeAttribute('src');
+            clip.load();
         };
-        const fail = () => { if (!disposed) setFailed(true); release(); };
+        const fail = () => {
+            if (disposed || finished) return;
+            finished = true;
+            setFailed(true);
+            release();
+        };
+        const capture = () => {
+            if (disposed || finished || clip.readyState < 2 || !clip.videoWidth || !clip.videoHeight) return;
+            try {
+                const canvas = document.createElement('canvas');
+                const scale = Math.min(1, 240 / Math.max(clip.videoWidth, clip.videoHeight));
+                canvas.width = Math.max(1, Math.round(clip.videoWidth * scale));
+                canvas.height = Math.max(1, Math.round(clip.videoHeight * scale));
+                const context = canvas.getContext('2d');
+                if (!context) { fail(); return; }
+                context.drawImage(clip, 0, 0, canvas.width, canvas.height);
+                // Small synchronous encoding avoids a stalled toBlob callback
+                // leaving the loader visible after the timeout was cleared.
+                const image = canvas.toDataURL('image/jpeg', 0.8);
+                if (!image.startsWith('data:image/')) { fail(); return; }
+                finished = true;
+                setPoster(image);
+                release();
+            } catch { fail(); }
+        };
         const start = () => {
             if (started || disposed) return;
             started = true;
-            clip = document.createElement('video');
-            clip.muted = true;
-            clip.playsInline = true;
-            clip.preload = 'auto';
+            // Keep the decoder attached for mobile browsers. Any decoded frame
+            // can complete the preview; do not rely only on a seeked event.
+            clip.onloadeddata = clip.oncanplay = clip.onseeked = capture;
             clip.onloadedmetadata = () => {
-                if (!clip) return;
-                // A small offset avoids the blank opening frame common on mobile.
-                clip.currentTime = Number.isFinite(clip.duration) ? Math.min(0.1, clip.duration / 2) : 0.1;
-            };
-            clip.onseeked = () => {
-                if (!clip || disposed) return;
-                try {
-                    const canvas = document.createElement('canvas');
-                    const scale = Math.min(1, 240 / Math.max(clip.videoWidth, clip.videoHeight));
-                    canvas.width = Math.max(1, Math.round(clip.videoWidth * scale));
-                    canvas.height = Math.max(1, Math.round(clip.videoHeight * scale));
-                    const context = canvas.getContext('2d');
-                    if (!context || !clip.videoWidth) { fail(); return; }
-                    context.drawImage(clip, 0, 0, canvas.width, canvas.height);
-                    release();
-                    canvas.toBlob(blob => {
-                        if (disposed) return;
-                        if (!blob) { setFailed(true); return; }
-                        objectUrl = URL.createObjectURL(blob);
-                        setPoster(objectUrl);
-                    }, 'image/jpeg', 0.8);
-                } catch { fail(); }
+                capture();
+                if (!finished) {
+                    try { clip.currentTime = Number.isFinite(clip.duration) ? Math.min(0.1, clip.duration / 2) : 0.1; }
+                    catch { /* loadeddata/canplay can still supply the first frame. */ }
+                }
             };
             clip.onerror = fail;
-            timer = setTimeout(fail, 20000);
+            timer = setTimeout(fail, 10000);
             clip.src = src;
             clip.load();
         };
@@ -653,12 +660,12 @@ function StoryPreview({ src, video }: { src: string; video: boolean }) {
             disposed = true;
             observer?.disconnect();
             release();
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
     }, [src, video]);
     if (!video) return <img src={src} alt="" loading="lazy" decoding="async"/>;
-    return <span ref={container} style={{ display: 'grid', placeItems: 'center', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 11, background: 'var(--soft)', color: 'var(--brand)' }}>
-        {poster ? <img src={poster} alt="Video story preview" style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'cover' }}/> :
-            failed ? <Film size={28} aria-label="Video story"/> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
+    return <span ref={container} style={{ position: 'relative', display: 'grid', placeItems: 'center', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 11, background: 'var(--soft)', color: 'var(--brand)' }}>
+        <video ref={decoder} muted playsInline preload="auto" aria-hidden="true" tabIndex={-1} style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}/>
+        {poster && !failed ? <img src={poster} alt="Video story preview" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'cover' }}/> :
+            failed ? <span style={{ display: 'grid', justifyItems: 'center', gap: 4 }}><Film size={24} aria-hidden="true"/><span style={{ fontSize: 9 }}>Tap to view</span></span> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
     </span>;
 }
