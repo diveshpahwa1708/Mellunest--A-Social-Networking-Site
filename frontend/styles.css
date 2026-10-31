@@ -204,3 +204,8 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .button.follow-toggle{width:110px;min-width:110px;flex:0 0 110px;min-height:44px;white-space:nowrap}
 .button.follow-toggle:hover:not(:disabled),.button.follow-toggle:active{transform:none}
 .follow-small{flex-shrink:0}
+
+/* Tab rows can swipe horizontally without a visible scrollbar. */
+.feed-tabs{overflow-y:hidden;scrollbar-width:none}
+.feed-tabs::-webkit-scrollbar{display:none;width:0;height:0}
+.feed-tabs button.selected:after{bottom:0}
