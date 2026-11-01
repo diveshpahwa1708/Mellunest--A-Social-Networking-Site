@@ -450,9 +450,14 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                 return json({ ok: true });
             }
             if (method === 'DELETE' && !p[1]) {
+                await limit('delete-account:' + u.id, 5, 15 * 60 * 1000);
                 const b: any = await req.json();
                 if (b.confirm !== u.username)
-                    fail(400, 'Enter your username to confirm.');
+                    fail(400, 'Enter your exact username to confirm.');
+                if (typeof b.password !== 'string' || !b.password || new TextEncoder().encode(b.password).length > 72)
+                    fail(400, 'Enter your current password.');
+                if (!u.password || !await compare(b.password, u.password))
+                    fail(403, 'Current password is incorrect.');
                 const files = await all('SELECT id FROM media WHERE user_id=?', u.id);
                 for (const f of files)
                     await env.BUCKET.delete([f.id, f.id + '.poster.jpg']);

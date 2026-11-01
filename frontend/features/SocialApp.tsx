@@ -31,6 +31,7 @@ export default function App() {
     const sendingIds = useRef(new Set<string>());
     const [changingPassword, setChangingPassword] = useState(false);
     const [passwordOpen, setPasswordOpen] = useState(false);
+    const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
     const [passwordError, setPasswordError] = useState('');
     const passwordLock = useRef(false);
     const [feedRevision, setFeedRevision] = useState(0);
@@ -464,8 +465,7 @@ export default function App() {
         history.replaceState({}, '', '/?post=' + n.target);
         setPage('post');
     } }}><Avatar user={n}/><span><strong>{n.name}</strong> {n.kind === 'like' ? 'liked your moment.' : n.kind === 'comment' ? 'left a comment on your moment.' : n.kind === 'follow' ? 'is now following you.' : 'sent you a message.'}<small>{ago(n.created)}</small></span>{!n.read && <i className="status-dot"/>}</button>) : <Empty title="Good things will find you." detail="Likes, comments, new followers and messages will appear here."/>}</section>}
- {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => { const confirmName = prompt('Permanently delete your account, all posts and conversations? Type your username to confirm.'); if (confirmName)
-        act(async () => { await api('users', 'DELETE', { confirm: confirmName }); location.replace('/?auth=login'); }); }}><Trash2 size={16}/>Delete account</Button></div></section>}
+ {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => setDeleteAccountOpen(true)}><Trash2 size={16}/>Delete account</Button></div></section>}
  </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home', 'Home'], [Compass, 'explore', 'Discover'], [Plus, 'create', 'Create'], [MessageCircle, 'messages', 'Chats'], [Users, 'profile', 'Profile'], [MoreHorizontal, 'more', 'More']].map(([Icon, v, label]: any) => <button key={v} className={(page === v || (v === 'more' && ['saved', 'notifications', 'settings'].includes(page))) ? 'selected' : ''} aria-label={label} aria-current={page === v ? 'page' : undefined} aria-haspopup={v === 'more' ? 'dialog' : undefined} aria-expanded={v === 'more' ? mobileMenu : undefined} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : v === 'more' ? setMobileMenu(true) : navigate(v)}><Icon size={21}/><span>{label}</span></button>)}</nav></div>
  {mobileMenu && <Modal title="Your Mellunest" close={() => setMobileMenu(false)}><div className="mobile-menu-options">{[[Bookmark, 'saved', 'Saved moments'], [Bell, 'notifications', 'Activity'], [Settings, 'settings', 'Settings']].map(([Icon, target, label]: any) => <button key={target} onClick={() => navigate(target)}><Icon size={21}/><span>{label}</span><ArrowRight size={17}/></button>)}<button onClick={() => { setMobileMenu(false); void logout(); }}><LogOut size={21}/><span>Log out</span></button></div></Modal>}
  {passwordOpen && <Modal title="Reset password" close={() => { if (!passwordLock.current) { setPasswordOpen(false); setPasswordError(''); } }}><form style={{ padding: 24 }} onSubmit={async e => {
@@ -500,6 +500,7 @@ export default function App() {
 <small className="muted">After changing your password, other devices will be signed out.</small>
 <Button type="submit" className="outline" disabled={changingPassword}>{changingPassword ? 'Changing password…' : 'Change password'}</Button>
 </fieldset></form></Modal>}
+ {deleteAccountOpen && <DeleteAccountDialog username={me.username} close={() => setDeleteAccountOpen(false)}/>}
  {compose && <Composer user={me} value={compose} close={() => setCompose(null)} saved={async (status: string) => { const createdPost = compose.kind === 'post' && !compose.id; setCompose(null); if (createdPost) { await openProfile(me.username); if (status === 'draft') setProfileTab('drafts'); } else { await loadPosts(); } await refreshAux(); tell(compose.kind === 'story' ? 'Your story is live for 24 hours.' : 'Your moment has been saved to your account.'); }}/>}
  {edit && <ProfileEditor user={me} close={() => setEdit(false)} saved={async (username: string) => { setEdit(false); await bootAuth(); if (profile)
         await openProfile(username); tell('Profile updated.'); }}/>}
@@ -763,4 +764,49 @@ function StoryPreview({ src, video }: { src: string; video: boolean }) {
         {poster && !failed ? <img src={poster} alt="Video story preview" onError={() => setFailed(true)} style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'cover' }}/> :
             failed ? <span style={{ display: 'grid', justifyItems: 'center', gap: 4 }}><Film size={24} aria-hidden="true"/><span style={{ fontSize: 9 }}>Tap to view</span></span> : <LoaderCircle className="spin" size={22} aria-label="Loading story preview"/>}
     </span>;
+}
+
+
+function DeleteAccountDialog({ username, close }: { username: string; close: () => void }) {
+    const [confirmName, setConfirmName] = useState('');
+    const [password, setPassword] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const lock = useRef(false);
+    return <Modal title="Delete your account?" close={() => { if (!lock.current) close(); }}>
+        <form className="profile-form" onSubmit={async e => {
+            e.preventDefault();
+            if (lock.current) return;
+            if (confirmName !== username) { setError('Enter your exact username to confirm.'); return; }
+            lock.current = true;
+            setBusy(true);
+            setError('');
+            try {
+                await api('users', 'DELETE', { confirm: confirmName, password });
+                location.replace('/?auth=login');
+            } catch (e: any) {
+                setError(e.message || 'Could not delete your account. Please try again.');
+                setPassword('');
+                lock.current = false;
+                setBusy(false);
+            }
+        }}>
+            <div className="alert error" style={{ display: 'block' }}>
+                <strong>This is permanent and cannot be undone.</strong>
+                <p>Your profile, posts, drafts, stories, uploaded media, comments, likes, saved posts and follow connections will be deleted.</p>
+                <p>Your conversations and their messages will also be removed, including from the other participants’ chats. You will be logged out and cannot recover this account.</p>
+            </div>
+            {error && <div className="alert error" role="alert">{error}</div>}
+            <label>Username
+                <input autoComplete="username" value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder="Enter your exact username" required disabled={busy} autoCapitalize="none" spellCheck={false}/>
+            </label>
+            <label>Current password
+                <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your current password" required disabled={busy}/>
+            </label>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <Button className="outline" disabled={busy} onClick={close}>Keep my account</Button>
+                <Button type="submit" className="danger outline" disabled={busy || !confirmName || !password}>{busy ? <><LoaderCircle className="spin" size={16}/>Deleting…</> : <><Trash2 size={16}/>Permanently delete account</>}</Button>
+            </div>
+        </form>
+    </Modal>;
 }
