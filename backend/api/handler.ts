@@ -507,9 +507,22 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
                 return json({ ok: true });
             }
         }
+        if (p[0] === 'presence' && method === 'POST') {
+            const body: any = await req.json();
+            if (!/^[a-f0-9-]{36}$/.test(body.client || '') || typeof body.active !== 'boolean' ||
+                !Number.isSafeInteger(body.sequence) || body.sequence < 0)
+                fail(400, 'Invalid presence update.');
+            await limit('presence:' + u.id, 120);
+            await batch([
+                ['DELETE FROM user_presence WHERE user_id=? AND updated<?', u.id, now() - day],
+                ['INSERT INTO user_presence(user_id,client_id,expires,sequence,updated) VALUES(?,?,?,?,?) ON CONFLICT(user_id,client_id) DO UPDATE SET expires=excluded.expires,sequence=excluded.sequence,updated=excluded.updated WHERE excluded.sequence>user_presence.sequence',
+                    u.id, body.client, body.active ? now() + 75000 : 0, body.sequence, now()]
+            ]);
+            return json({ ok: true });
+        }
         if (p[0] === 'conversations') {
             if (method === 'GET')
-                return json({ items: await all(`SELECT c.id conversation_id,c.created,${pub},(SELECT body FROM messages WHERE conversation_id=c.id ORDER BY created DESC,id DESC LIMIT 1) preview,(SELECT MAX(created) FROM messages WHERE conversation_id=c.id) recent,(SELECT count(*) FROM messages WHERE conversation_id=c.id AND sender!=? AND read=0) unread FROM conversations c JOIN users u ON u.id=CASE WHEN c.a=? THEN c.b ELSE c.a END WHERE (c.a=? OR c.b=?) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE(b.user_id=? AND b.target=u.id) OR(b.target=? AND b.user_id=u.id)) ORDER BY COALESCE(recent,c.created) DESC LIMIT 100`, u.id, u.id, u.id, u.id, u.id, u.id) });
+                return json({ items: await all(`SELECT c.id conversation_id,c.created,${pub},EXISTS(SELECT 1 FROM user_presence pr WHERE pr.user_id=u.id AND pr.expires>?) online,(SELECT body FROM messages WHERE conversation_id=c.id ORDER BY created DESC,id DESC LIMIT 1) preview,(SELECT MAX(created) FROM messages WHERE conversation_id=c.id) recent,(SELECT count(*) FROM messages WHERE conversation_id=c.id AND sender!=? AND read=0) unread FROM conversations c JOIN users u ON u.id=CASE WHEN c.a=? THEN c.b ELSE c.a END WHERE (c.a=? OR c.b=?) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE(b.user_id=? AND b.target=u.id) OR(b.target=? AND b.user_id=u.id)) ORDER BY COALESCE(recent,c.created) DESC LIMIT 100`, now(), u.id, u.id, u.id, u.id, u.id, u.id) });
             if (method === 'POST') {
                 const b: any = await req.json(), target = str(b.target, 40);
                 if (target === u.id || !await one('SELECT 1 FROM users WHERE id=? AND messages=1', target) || await blocked(u.id, target))
@@ -574,7 +587,7 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             const encoder = new TextEncoder();
             const stream = new ReadableStream({ async start(controller) { let last = '', count = 0; const abort = () => { stopped = true; }; req.signal.addEventListener('abort', abort); try {
                     while (!stopped && count++ < 20) {
-                        const c = await all('SELECT c.id,COUNT(m.id) total,MAX(m.created) latest,SUM(m.read) reads FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.a=? OR c.b=? GROUP BY c.id', u.id, u.id);
+                        const c = await all('SELECT c.id,COUNT(m.id) total,MAX(m.created) latest,SUM(m.read) reads,EXISTS(SELECT 1 FROM user_presence pr WHERE pr.user_id=CASE WHEN c.a=? THEN c.b ELSE c.a END AND pr.expires>?) online FROM conversations c LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.a=? OR c.b=? GROUP BY c.id', u.id, now(), u.id, u.id);
                         const n = await one('SELECT count(*) total,SUM(read) reads FROM notifications WHERE user_id=?', u.id);
                         const signature = JSON.stringify({ c, n });
                         if (signature !== last) {

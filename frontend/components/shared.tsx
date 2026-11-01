@@ -4,10 +4,13 @@ import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, Arr
 import {api,media,ago,iconStyle,type Item} from '../lib/api';
 import { VideoPlayer } from './VideoPlayer';
 export function Logo() { return <span className="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M9 32c0 15 10 24 23 24s23-9 23-24M16 32c0 11 6 17 16 17s16-6 16-17M24 17c1-7 8-10 15-8-1 9-7 13-15 8Z"/><circle cx="35" cy="29" r="5"/></svg>mellunest<span className="logodot">.</span></span>; }
-export function Avatar({ user, size = 42 }: {
+export function Avatar({ user, size = 42, online = false }: {
     user?: Item;
     size?: number;
-}) { return <span className="avatar" style={{ width: size, height: size, fontSize: size * .35 }}>{user?.avatar ? <img src={media(user.avatar)} alt="" loading="lazy" decoding="async" width={size} height={size}/> : (user?.name || user?.username || 'V').slice(0, 1).toUpperCase()}</span>; }
+    online?: boolean;
+}) { const avatar = <span className="avatar" style={{ width: size, height: size, fontSize: size * .35 }}>{user?.avatar ? <img src={media(user.avatar)} alt="" loading="lazy" decoding="async" width={size} height={size}/> : (user?.name || user?.username || 'V').slice(0, 1).toUpperCase()}</span>;
+    return online ? <span className="avatar-presence" style={{ width: size, height: size }}>{avatar}<span className="avatar-online-dot" role="img" aria-label="Online"/></span> : avatar;
+}
 export function Button({ children, onClick, className = '', ...props }: any) { return <button type="button" className={'button ' + className} onClick={onClick} {...props}>{children}</button>; }
 export function Empty({ title, detail, action }: {
     title: string;

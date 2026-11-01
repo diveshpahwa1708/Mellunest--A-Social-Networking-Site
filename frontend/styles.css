@@ -282,3 +282,8 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 /* Read receipts: clear blue double ticks beneath the outgoing message. */
 .bubble-wrap>small .message-seen{color:#287cb8;flex-shrink:0}
 [data-theme=dark] .bubble-wrap>small .message-seen{color:#79c4f2}
+
+/* Presence is opt-in and used only by Messages avatars. */
+.avatar-presence{position:relative;display:inline-flex;flex-shrink:0;vertical-align:middle}
+.avatar-online-dot{position:absolute;right:0;bottom:0;width:11px;height:11px;border:2px solid var(--panel);border-radius:50%;background:#3b9b61;box-shadow:0 0 0 1px #3b9b6120}
+[data-theme=dark] .avatar-online-dot{background:#79c98b}

@@ -18,3 +18,5 @@ export const notifications = sqliteTable('notifications', { id: text().primaryKe
 export const blocks = sqliteTable('blocks', { userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), target: text().notNull().references(() => users.id, { onDelete: 'cascade' }) }, t => [primaryKey({ columns: [t.userId, t.target] })]);
 
 export const commentLikes = sqliteTable('comment_likes', { userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), commentId: text('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }) }, t => [primaryKey({ columns: [t.userId, t.commentId] }), index('comment_likes_comment').on(t.commentId)]);
+
+export const userPresence = sqliteTable('user_presence', { userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }), clientId: text('client_id').notNull(), expires: integer().notNull(), sequence: integer().notNull(), updated: integer().notNull() }, t => [primaryKey({ columns: [t.userId, t.clientId] }), index('presence_user_expiry').on(t.userId, t.expires)]);
