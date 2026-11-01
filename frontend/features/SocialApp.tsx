@@ -16,9 +16,12 @@ export default function App() {
     const bottom = useRef<HTMLDivElement>(null), chatPane = useRef<HTMLDivElement>(null), nearBottom = useRef(true), refreshRef = useRef<() => void>(() => { }), currentRef = useRef<Item | null>(null);
     const pendingActions = useRef(new Set<string>());
     const momentLikes = useRef(new Map<string, { desired: boolean; confirmed: boolean; count: number; running: boolean }>());
+    const postSaves = useRef(new Map<string, { desired: boolean; confirmed: boolean; running: boolean }>());
     const mergeMomentLikes = (rows: Item[]) => rows.map(row => {
         const state = momentLikes.current.get(row.id);
-        return state ? { ...row, liked: state.desired, likes: Math.max(0, state.count + Number(state.desired) - Number(state.confirmed)) } : row;
+        const save = postSaves.current.get(row.id);
+        const merged = state ? { ...row, liked: state.desired, likes: Math.max(0, state.count + Number(state.desired) - Number(state.confirmed)) } : row;
+        return save ? { ...merged, saved: save.desired } : merged;
     });
     const followRevision = useRef(0);
     const followActions = useRef(new Map<string, { desired: boolean; confirmed: boolean; running: boolean }>());
@@ -257,23 +260,35 @@ export default function App() {
             }
             return;
         }
-        const key = type + ':' + p.id;
-        if (pendingActions.current.has(key)) return;
-        pendingActions.current.add(key);
-        const field = type === 'like' ? 'liked' : 'saved';
-        const previous = !!p[field], active = !previous;
-        const apply = (value: boolean, delta: number) => setItems(old => old.map(x =>
-            x.id === p.id ? { ...x, [field]: value, likes: Math.max(0, Number(x.likes || 0) + delta) } : x));
-        const delta = type === 'like' ? (active ? 1 : -1) : 0;
-        apply(active, delta);
+        if (type !== 'save') return;
+        let state = postSaves.current.get(p.id);
+        if (!state) {
+            state = { desired: !!p.saved, confirmed: !!p.saved, running: false };
+            postSaves.current.set(p.id, state);
+        }
+        state.desired = !state.desired;
+        // Capture each click's value so React's queued updater never reads a
+        // deleted or subsequently changed in-flight entry.
+        const apply = (saved: boolean) => setItems(rows => rows.map(row =>
+            row.id === p.id ? { ...row, saved } : row));
+        apply(state.desired);
+        setError('');
+        if (state.running) return;
+        state.running = true;
         try {
-            setError('');
-            await api(type + '/' + p.id, 'POST', { active });
+            while (state.desired !== state.confirmed) {
+                const target = state.desired;
+                await api('save/' + p.id, 'POST', { active: target });
+                state.confirmed = target;
+            }
         } catch (e: any) {
-            apply(previous, -delta);
+            state.desired = state.confirmed;
+            apply(state.confirmed);
             setError(e.message);
         } finally {
-            pendingActions.current.delete(key);
+            apply(state.desired);
+            state.running = false;
+            postSaves.current.delete(p.id);
         }
     };
     const startChat = async (u: Item) => {
