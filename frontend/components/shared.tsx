@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, ArrowUpRight, ArrowRight, ArrowLeft, X, Send, Sun, Moon, Settings, LogOut, ImagePlus, Film, Trash2, MoreHorizontal, Users, Check, CheckCheck, LoaderCircle, ChevronLeft, ChevronRight, Lock, Globe, ShieldCheck, Leaf, PenLine, Upload, Eye, Link as LinkIcon } from 'lucide-react';
+import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, ArrowUpRight, ArrowRight, ArrowLeft, X, Send, Sun, Moon, Settings, LogOut, ImagePlus, Film, Trash2, MoreHorizontal, Users, Check, CheckCheck, LoaderCircle, ChevronLeft, ChevronRight, Lock, Globe, ShieldCheck, Leaf, PenLine, Upload, Eye, EyeOff, Link as LinkIcon } from 'lucide-react';
 import {api,media,ago,iconStyle,type Item} from '../lib/api';
 import { VideoPlayer } from './VideoPlayer';
 export function Logo() { return <span className="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M9 32c0 15 10 24 23 24s23-9 23-24M16 32c0 11 6 17 16 17s16-6 16-17M24 17c1-7 8-10 15-8-1 9-7 13-15 8Z"/><circle cx="35" cy="29" r="5"/></svg>mellunest<span className="logodot">.</span></span>; }
@@ -72,4 +72,16 @@ export function MediaView({ item, controls = true, priority = false }: {
     return item.mime?.startsWith('video')
         ? (controls ? <VideoPlayer key={id} src={media(id)}/> : <video src={media(id)} playsInline preload="none"/>)
         : <FeedImage key={id} src={media(id)} priority={priority}/>;
+}
+
+export function PasswordInput({ fieldLabel = 'Password', ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & { fieldLabel?: string }) {
+    const [visible, setVisible] = useState(false);
+    return <span className="password-field">
+        <input {...props} type={visible ? 'text' : 'password'} aria-label={props['aria-label'] || fieldLabel}/>
+        <button type="button" className="password-visibility" aria-label={(visible ? 'Hide ' : 'Show ') + fieldLabel.toLowerCase()}
+            aria-pressed={visible} disabled={props.disabled}
+            onPointerDown={e => e.preventDefault()} onClick={() => setVisible(value => !value)}>
+            {visible ? <EyeOff size={18} aria-hidden="true"/> : <Eye size={18} aria-hidden="true"/>}
+        </button>
+    </span>;
 }

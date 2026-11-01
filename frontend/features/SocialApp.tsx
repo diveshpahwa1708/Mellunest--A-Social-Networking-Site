@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { House, Compass, MessageCircle, Heart, Bookmark, Bell, Plus, Search, ArrowUpRight, ArrowRight, ArrowLeft, X, Send, Sun, Moon, Settings, LogOut, ImagePlus, Film, Trash2, MoreHorizontal, Users, Check, CheckCheck, LoaderCircle, ChevronLeft, ChevronRight, Lock, Globe, ShieldCheck, Leaf, PenLine, Upload, Eye, Link as LinkIcon } from 'lucide-react';
 import {api,media,ago,iconStyle,type Item} from '../lib/api';
-import {Logo,Avatar,Button,Empty,Modal,MediaView} from '../components/shared';
+import {Logo,Avatar,Button,Empty,Modal,MediaView,PasswordInput} from '../components/shared';
 import {uploadFile} from '../lib/upload';
 import {AuthScreen} from './AuthScreen';
 import {PostCard} from './PostCard';
@@ -494,9 +494,9 @@ export default function App() {
 <p className="muted">Use at least 8 characters, including a letter and a number. Special characters are optional.</p>
 {passwordError && <p className="alert error" role="alert">{passwordError}</p>}
 <fieldset disabled={changingPassword} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 14 }}>
-<label style={{ display: 'grid', gap: 6 }}>Old password<input name="oldPassword" type="password" autoComplete="current-password" autoFocus required /></label>
-<label style={{ display: 'grid', gap: 6 }}>New password<input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
-<label style={{ display: 'grid', gap: 6 }}>Confirm new password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
+<label style={{ display: 'grid', gap: 6 }}>Old password<PasswordInput fieldLabel="Old password" name="oldPassword" autoComplete="current-password" autoFocus required /></label>
+<label style={{ display: 'grid', gap: 6 }}>New password<PasswordInput fieldLabel="New password" name="newPassword" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
+<label style={{ display: 'grid', gap: 6 }}>Confirm new password<PasswordInput fieldLabel="Confirm new password" name="confirmPassword" autoComplete="new-password" minLength={8} maxLength={72} required /></label>
 <small className="muted">After changing your password, other devices will be signed out.</small>
 <Button type="submit" className="outline" disabled={changingPassword}>{changingPassword ? 'Changing password…' : 'Change password'}</Button>
 </fieldset></form></Modal>}
@@ -801,7 +801,7 @@ function DeleteAccountDialog({ username, close }: { username: string; close: () 
                 <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder="Enter your exact username" required disabled={busy} autoCapitalize="none" spellCheck={false}/>
             </label>
             <label>Current password
-                <input type="password" autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your current password" required disabled={busy}/>
+                <PasswordInput fieldLabel="Current password" autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your current password" required disabled={busy}/>
             </label>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <Button className="outline" disabled={busy} onClick={close}>Keep my account</Button>

@@ -287,3 +287,10 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .avatar-presence{position:relative;display:inline-flex;flex-shrink:0;vertical-align:middle}
 .avatar-online-dot{position:absolute;right:0;bottom:0;width:11px;height:11px;border:2px solid var(--panel);border-radius:50%;background:#3b9b61;box-shadow:0 0 0 1px #3b9b6120}
 [data-theme=dark] .avatar-online-dot{background:#79c98b}
+
+/* Shared password visibility control, sized for keyboard and touch use. */
+.password-field{position:relative;display:block;width:100%;min-width:0}
+.password-field>input,.auth-form-wrap .password-field>input{padding-right:48px}
+.password-visibility{position:absolute;right:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:8px;color:var(--muted);background:transparent}
+.password-visibility:hover:not(:disabled){color:var(--brand);background:var(--soft)}
+.password-visibility:focus-visible{outline:2px solid var(--coral);outline-offset:-3px}
