@@ -14,6 +14,7 @@ export default function App() {
         items: Item[];
     } | null>(null), [dark, setDark] = useState(false), [authMode, setAuthMode] = useState('login'), [token, setToken] = useState('');
     const bottom = useRef<HTMLDivElement>(null), chatPane = useRef<HTMLDivElement>(null), nearBottom = useRef(true), refreshRef = useRef<() => void>(() => { }), currentRef = useRef<Item | null>(null);
+    const preferenceActions = useRef(new Map<string, { desired: boolean; confirmed: boolean; running: boolean }>());
     const pendingActions = useRef(new Set<string>());
     const momentLikes = useRef(new Map<string, { desired: boolean; confirmed: boolean; count: number; running: boolean }>());
     const postSaves = useRef(new Map<string, { desired: boolean; confirmed: boolean; running: boolean }>());
@@ -230,6 +231,35 @@ export default function App() {
         setPage(v);
         setError('');
         history.replaceState({}, '', '/');
+    };
+    const togglePreference = async (key: string) => {
+        if (!me || !['notifications', 'messages'].includes(key)) return;
+        let state = preferenceActions.current.get(key);
+        if (!state) {
+            state = { desired: !!me[key], confirmed: !!me[key], running: false };
+            preferenceActions.current.set(key, state);
+        }
+        state.desired = !state.desired;
+        const apply = (value: boolean) => setAuth(previous => previous && previous.user?.id === me.id
+            ? { ...previous, user: { ...previous.user, [key]: value } } : previous);
+        apply(state.desired);
+        setError('');
+        if (state.running) return;
+        state.running = true;
+        try {
+            while (state.desired !== state.confirmed) {
+                const target = state.desired;
+                await api('users/preferences', 'PATCH', { key, value: target });
+                state.confirmed = target;
+            }
+        } catch (e: any) {
+            state.desired = state.confirmed;
+            apply(state.confirmed);
+            setError(e.message || 'Could not save this preference. Please try again.');
+        } finally {
+            apply(state.desired);
+            preferenceActions.current.delete(key);
+        }
     };
     const toggleFollow = async (u: Item) => {
         const key = 'follow:' + u.id;
@@ -475,7 +505,7 @@ export default function App() {
         history.replaceState({}, '', '/?post=' + n.target);
         setPage('post');
     } }}><Avatar user={n}/><span><strong>{n.name}</strong> {n.kind === 'like' ? 'liked your moment.' : n.kind === 'comment' ? 'left a comment on your moment.' : n.kind === 'follow' ? 'is now following you.' : 'sent you a message.'}<small>{ago(n.created)}</small></span>{!n.read && <i className="status-dot"/>}</button>) : <Empty title="Good things will find you." detail="Likes, comments, new followers and messages will appear here."/>}</section>}
- {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => act(async () => { await api('users', 'PATCH', { ...me, notifications: !!me.notifications, messages: !!me.messages, [key]: !me[key] }); await bootAuth(); })}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => setDeleteAccountOpen(true)}><Trash2 size={16}/>Delete account</Button></div></section>}
+ {page === 'settings' && <section className="settings-page"><div className="page-heading"><div className="eyebrow">MAKE YOURSELF AT HOME</div><h1>Your space. Your say<span>.</span></h1></div><div className="card settings-card"><h2>Profile & account</h2><div className="setting-row"><span><strong>Your public profile</strong><small>Name, bio, website and profile photo</small></span><Button className="outline" onClick={() => setEdit(true)}>Edit profile</Button></div><div className="setting-row"><span><strong>Password</strong><small>Change your password using your current password.</small></span><Button className="outline" onClick={() => { setPasswordError(''); setPasswordOpen(true); }}>Reset password</Button></div></div><div className="card settings-card"><h2>Privacy & preferences</h2><div className="setting-row"><span><strong>Appearance</strong><small>{dark ? 'Soft dark' : 'Warm light'}</small></span><Button className="outline" onClick={() => setDark(!dark)}>{dark ? <Sun size={17}/> : <Moon size={17}/>}Switch theme</Button></div>{[['notifications', 'Activity notifications', 'Likes, comments, follows and messages.'], ['messages', 'Allow direct messages', 'People can start and continue conversations with you.']].map(([key, title, detail]) => <div className="setting-row" key={key}><span><strong>{title}</strong><small>{detail}</small></span><button className={'toggle ' + (me[key] ? 'on' : '')} role="switch" aria-checked={!!me[key]} aria-label={title} onClick={() => void togglePreference(key)}><span /></button></div>)}<div className="setting-row"><span><strong>Blocked accounts</strong><small>Manage people you have blocked.</small></span><Button className="outline" onClick={() => act(async () => { const r = await api('blocks'); setList({ title: 'Blocked accounts', items: r.items }); })}>Manage</Button></div><p className="muted">Published moments and profiles are visible to members with access to this site. Saved moments, drafts and conversations are private.</p></div><div className="settings-actions"><Button className="outline" onClick={logout}><LogOut size={17}/>Log out</Button><Button className="danger outline" onClick={() => setDeleteAccountOpen(true)}><Trash2 size={16}/>Delete account</Button></div></section>}
  </main><nav className="mobile-nav" aria-label="Mobile navigation">{[[House, 'home', 'Home'], [Compass, 'explore', 'Discover'], [Plus, 'create', 'Create'], [MessageCircle, 'messages', 'Chats'], [Users, 'profile', 'Profile'], [MoreHorizontal, 'more', 'More']].map(([Icon, v, label]: any) => <button key={v} className={(page === v || (v === 'more' && ['saved', 'notifications', 'settings'].includes(page))) ? 'selected' : ''} aria-label={label} aria-current={page === v ? 'page' : undefined} aria-haspopup={v === 'more' ? 'dialog' : undefined} aria-expanded={v === 'more' ? mobileMenu : undefined} onClick={() => v === 'create' ? setCompose({ kind: 'post' }) : v === 'more' ? setMobileMenu(true) : navigate(v)}><Icon size={21}/><span>{label}</span></button>)}</nav></div>
  {mobileMenu && <Modal title="Your Mellunest" close={() => setMobileMenu(false)}><div className="mobile-menu-options">{[[Bookmark, 'saved', 'Saved moments'], [Bell, 'notifications', 'Activity'], [Settings, 'settings', 'Settings']].map(([Icon, target, label]: any) => <button key={target} onClick={() => navigate(target)}><Icon size={21}/><span>{label}</span><ArrowRight size={17}/></button>)}<button onClick={() => { setMobileMenu(false); void logout(); }}><LogOut size={21}/><span>Log out</span></button></div></Modal>}
  {passwordOpen && <Modal title="Reset password" close={() => { if (!passwordLock.current) { setPasswordOpen(false); setPasswordError(''); } }}><form style={{ padding: 24 }} onSubmit={async e => {

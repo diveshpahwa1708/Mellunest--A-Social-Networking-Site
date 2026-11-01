@@ -426,6 +426,17 @@ export async function handle(req: Request, env: Runtime): Promise<Response> {
             }
         }
         if (p[0] === 'users') {
+            if (method === 'PATCH' && p[1] === 'preferences' && !p[2]) {
+                const b: any = await req.json();
+                if (!['notifications', 'messages'].includes(b.key) || typeof b.value !== 'boolean')
+                    fail(400, 'Choose a valid preference.');
+                // Update only the requested preference, never stale profile fields.
+                if (b.key === 'notifications')
+                    await run('UPDATE users SET notifications=? WHERE id=?', b.value ? 1 : 0, u.id);
+                else
+                    await run('UPDATE users SET messages=? WHERE id=?', b.value ? 1 : 0, u.id);
+                return json({ ok: true });
+            }
             if (method === 'GET') {
                 let rows;
                 if (p[1]) {
