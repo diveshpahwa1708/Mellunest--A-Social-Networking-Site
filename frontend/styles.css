@@ -278,3 +278,7 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
     .modal:has(> .profile-form)::-webkit-scrollbar-thumb{background:ButtonText;border-color:Canvas}
     .modal:has(> .profile-form)::-webkit-scrollbar-track{background:Canvas}
 }
+
+/* Read receipts: clear blue double ticks beneath the outgoing message. */
+.bubble-wrap>small .message-seen{color:#287cb8;flex-shrink:0}
+[data-theme=dark] .bubble-wrap>small .message-seen{color:#79c4f2}
