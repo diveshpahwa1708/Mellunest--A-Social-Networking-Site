@@ -774,7 +774,7 @@ function DeleteAccountDialog({ username, close }: { username: string; close: () 
     const [error, setError] = useState('');
     const lock = useRef(false);
     return <Modal title="Delete your account?" close={() => { if (!lock.current) close(); }}>
-        <form className="profile-form" onSubmit={async e => {
+        <form className="profile-form" autoComplete="off" onSubmit={async e => {
             e.preventDefault();
             if (lock.current) return;
             if (confirmName !== username) { setError('Enter your exact username to confirm.'); return; }
@@ -798,10 +798,10 @@ function DeleteAccountDialog({ username, close }: { username: string; close: () 
             </div>
             {error && <div className="alert error" role="alert">{error}</div>}
             <label>Username
-                <input autoComplete="username" value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder="Enter your exact username" required disabled={busy} autoCapitalize="none" spellCheck={false}/>
+                <input autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={confirmName} onChange={e => setConfirmName(e.target.value)} placeholder="Enter your exact username" required disabled={busy} autoCapitalize="none" spellCheck={false}/>
             </label>
             <label>Current password
-                <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your current password" required disabled={busy}/>
+                <input type="password" autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your current password" required disabled={busy}/>
             </label>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <Button className="outline" disabled={busy} onClick={close}>Keep my account</Button>
