@@ -294,3 +294,32 @@ button,a,input,textarea,select,[role=button]{touch-action:manipulation}
 .password-visibility{position:absolute;right:2px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:8px;color:var(--muted);background:transparent}
 .password-visibility:hover:not(:disabled){color:var(--brand);background:var(--soft)}
 .password-visibility:focus-visible{outline:2px solid var(--coral);outline-offset:-3px}
+
+/* Keep the visible switch compact inside a generous touch target. */
+.setting-row:has(> .toggle){flex-wrap:nowrap}
+.setting-row:has(> .toggle)>span{min-width:0}
+.toggle,.toggle.on{
+    position:relative;display:block;width:52px;min-width:52px;height:44px;min-height:44px;
+    flex:0 0 52px;padding:0;border:0;border-radius:12px;background:transparent;
+    touch-action:manipulation;
+}
+.toggle::before{
+    content:'';position:absolute;left:2px;top:8px;width:48px;height:28px;
+    border-radius:999px;background:#c2c9bf;box-shadow:inset 0 0 0 1px #203b3514;
+    transition:background-color .18s ease;
+}
+.toggle.on::before{background:var(--brand)}
+.toggle>span{
+    position:absolute;left:6px;top:12px;width:20px;height:20px;
+    border-radius:50%;background:#fff;box-shadow:0 1px 3px #142c2430;
+    transform:translateX(0);transition:transform .18s ease;pointer-events:none;
+}
+.toggle.on>span{transform:translateX(20px)}
+.toggle:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+[data-theme=dark] .toggle:not(.on)::before{background:#4d6153}
+@media(forced-colors:active){
+    .toggle::before{background:Canvas;border:1px solid ButtonText;box-sizing:border-box}
+    .toggle.on::before{background:Highlight}
+    .toggle>span{background:ButtonText}
+    .toggle.on>span{background:HighlightText}
+}
